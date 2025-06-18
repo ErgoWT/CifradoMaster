@@ -77,6 +77,41 @@ def sincronizacion(y_sinc, times, rosslerParams, time_sinc, keystream):
     
     return y_master_interp, t_eval, sol_slave.y[1], sol_slave.t, sol_slave.y[0][time_sinc:]
 
+def revertir_confusion(vector_cifrado, vector_logistico, x_sinc, nmax):
+    x_cif_esclavo = np.resize(x_sinc, nmax)
+
+    difusion = vector_cifrado - vector_logistico - x_cif_esclavo
+
+    return difusion
+
+def revertir_difusion(difusion, vector_logistico, nmax, ancho, alto):
+    # 1. Regenerar vector de mezcla (mismo que el maestro)
+    vector_mezcla = np.floor(vector_logistico * nmax).astype(int)
+
+    # 2. Inicializar estructuras para revertir
+    vector_temp = np.full(nmax, 260.0)
+    vector_original = np.zeros(nmax)
+    contador = 0
+
+    # 3. Primera pasada: asignar a posiciones originales
+    for i in range(nmax):
+        pos = vector_mezcla[i]
+        if vector_temp[pos] == 260.0:
+            vector_temp[pos] = difusion[contador]
+            contador += 1
+
+    # 4. Segunda apsada: asignar posiciones restantes en orden
+    for j in range(nmax):
+        if contador >= nmax:
+            break
+        if vector_temp[j] == 260.0:
+            vector_temp[j] = difusion[contador]
+            contador += 1
+
+    # 5. Reconstruir la imagen
+    img_array = (vector_temp * 255).reshape(alto, ancho, 3).astype(np.uint8)
+    return Image.fromarray(img_array)
+
 def main():
     global receivedKeys, receivedData
 
@@ -154,6 +189,42 @@ def main():
     df.to_csv('error_sincronizacion_Y.csv', index=False)
     print("Datos de error guardados en error_sincronizacion_Y.csv")
     print("Proceso de sincronización completado.")
+
+    # ========== PROCESO DE DESCIFRADO ==========
+    print("Iniciando proceso de descifrado...")
+    # Extraer datos de cifrado
+    vector_cifrado = np.array(receivedData['vector_cifrado'])
+    nmax = receivedData['nmax']
+    ancho = receivedData['ancho']
+    alto = receivedData['alto']
+
+    # Regenerar vector logístico (mismo que el maestro)
+    logisticParams = receivedKeys['logisticParams']
+    a_log = logisticParams['aLog']
+    x0_log = logisticParams['x0_log']
+
+    vector_logistico = np.zeros(nmax)
+    x = x0_log
+    for i in range(nmax):
+        x = a_log * x * (1 - x)
+        vector_logistico[i] = x
+    print("Vector logístico generado.")
+
+    # Revertir la confusión
+    difusion = revertir_confusion(
+        vector_cifrado, vector_logistico, x_sinc, nmax
+    )
+
+    print("Confusión revertida.")
+
+    # Revertir la difusión
+    imagen_descifrada = revertir_difusion(
+        difusion, vector_logistico, nmax, ancho, alto
+    )
+    print("Difusión revertida. Imagen descifrada generada.")
+    # Guardar imagen descifrada
+    imagen_descifrada.save('imagen_descifrada.png')
+    print("Imagen descifrada guardada como imagen_descifrada.png")
 
 if __name__ == "__main__":
     main()
