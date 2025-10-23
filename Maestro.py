@@ -8,7 +8,7 @@ from scipy.integrate import solve_ivp
 from PIL import Image
 
 # ========== CONFIGURACION MQTT ==========
-broker = "192.168.0.55"
+broker = "192.168.50.230"
 port = 1883
 username = "usuario1"
 password = "qwerty123"
@@ -65,7 +65,8 @@ def aplicar_difusion(imagen, a_log, x0_log):
     # vector_logistico = [0.123, 0.757, 0.432, ...] Valores entre 0 y 1
     # nmax = 1000 (tamaño del vector de la imagen)
     # vector_mezcla = [123, 756 (se redondeó hacia abajo), 432, ...] Índices enteros entre 0 y 999 
-
+    
+   
 
     # 3. Aplicamos permutación con marcador 260
     vector_temp = vector_inf.copy() # Copiamos el vector original
@@ -173,10 +174,21 @@ def aplicar_confusion(difusion, vector_logistico, nmax, rosslerParams):
 
     return vector_cifrado, y, t
 
+def visualizar_imagen_normalizada(imagen):
+    # Convertir la imagen a array numpy y normalizar
+    img = np.array(imagen)/255.0
+    
+    plt.figure(figsize=(12, 10))
+    plt.imshow(img)
+    plt.title("")
+    plt.axis('off')
+    plt.savefig("Resultados/0_imagen_normalizada.png", dpi=300, bbox_inches='tight')
+    plt.close()
+
 # ========== PRINCIPAL ==========
 if __name__ == "__main__":
     # 1. Cargar la imagen
-    imagen = Image.open("Pixel_3.jpg")
+    imagen = Image.open("Prueba.jpg")
     print("Imagen cargada correctamente")
 
     # 2. Aplicar la etapa de difusión
@@ -257,8 +269,8 @@ if __name__ == "__main__":
     plt.axis('off')
     
     plt.tight_layout()
-    plt.savefig("ImagenCifradav2.png")
-    print("Resultados del proceso completo guardados en ImagenCifradav2.png")
+    plt.savefig("ImagenCifrada.png")
+    print("Resultados del proceso completo guardados en ImagenCifrada.png")
     
     # 7. Guardar componentes para análisis
     trayectoria_y = {
