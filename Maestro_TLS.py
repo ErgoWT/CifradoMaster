@@ -40,7 +40,7 @@ LOGISTIC_PARAMS = {
 
 # ========== RUTAS Y ARCHIVOS ==========
 CARPETA_CIFRADO = Path("Cifrado")
-IMAGEN_ENTRADA = Path("Prueba2.jpg")
+IMAGEN_ENTRADA = Path("Prueba.jpg")
 RUTA_IMAGEN_CIFRADA = CARPETA_CIFRADO / "ImagenCifrada_TLS.png"
 RUTA_TIMINGS = CARPETA_CIFRADO / "tiempos_procesos.csv"
 RUTA_DISPERSION = CARPETA_CIFRADO / "diagrama_dispersion.png"
@@ -162,7 +162,7 @@ def aplicar_difusion(vector_inf, nmax):
     t_fin_difusion = time.perf_counter()
     tiempo_difusion = t_fin_difusion - t_inicio_difusion
     print(f"[DIFUSION] Tiempo de difusión: {tiempo_difusion:.4f} segundos")
-    print("DIFUSIÓN COMPLETADA")
+    print("[DIFUSION] DIFUSIÓN COMPLETADA")
     
 
     return difusion, vector_logistico, tiempo_difusion
@@ -197,12 +197,12 @@ def aplicar_confusion(difusion, vector_logistico, nmax, rosslerParams):
     # 3) Esa señal se redimensiona a nmax y se suma a la difusión y la secuencia logística
     #    para obtener el vector cifrado final
     
-    print("APLICANDO CONFUSIÓN...")
+    print("[CONFUSION] APLICANDO CONFUSIÓN...")
     t_inicio_confusion = time.perf_counter()
 
     # 1. Se calculan las iteraciones totales (sincronización + cifrado)
     iteraciones = TIME_SINC + nmax
-    print(f"Iteraciones totales: {iteraciones}")
+    print(f"[CONFUSION] Iteraciones totales: {iteraciones}")
 
     # 2. Resolver el sistema de Rössler
     t_span = (0, iteraciones * H)
@@ -228,15 +228,14 @@ def aplicar_confusion(difusion, vector_logistico, nmax, rosslerParams):
 
     # 4. Aplicar confusión (solo después del tiempo de sincronización)
     vector_cifrado = np.zeros(nmax)
-    print("Aplicando confusión a los datos...")
     vector_cifrado = difusion + vector_logistico + x
-    print("Confusión aplicada correctamente")
+    print("[CONFUSION] Confusión aplicada correctamente")
 
     t_fin_confusion = time.perf_counter()
     tiempo_confusion = t_fin_confusion - t_inicio_confusion
 
-    print(f"[CONFUSIÓN] Tiempo de integración de Rössler: {tiempo_rossler:.4f} segundos")
-    print(f"[CONFUSIÓN] Tiempo total de confusión: {tiempo_confusion:.4f} segundos")
+    print(f"[CONFUSION] Tiempo de integración de Rössler: {tiempo_rossler:.4f} segundos")
+    print(f"[CONFUSION] Tiempo total de confusión: {tiempo_confusion:.4f} segundos")
 
     return vector_cifrado, y, t, tiempo_rossler, tiempo_confusion
 
@@ -254,7 +253,7 @@ def cargar_imagen():
     alto, ancho, canales = vector_inf.shape
     vector_inf = vector_inf.flatten().astype(np.float32)/255.0
     nmax = vector_inf.size
-    print("Imagen cargada y vectorizada correctamente")
+    print("[CARGA] Imagen cargada y vectorizada correctamente")
     return imagen, vector_inf, ancho, alto, nmax
 
 def preparar_payload(vector_cifrado, y_sinc, t, ancho, alto, nmax):
@@ -394,7 +393,7 @@ def registrar_tiempos(tiempo_difusion, tiempo_rossler, tiempo_confusion, tiempo_
     df = pd.DataFrame([registro])
     archivo = RUTA_TIMINGS.exists()
     df.to_csv(RUTA_TIMINGS, mode='a', index = False, header = not archivo)
-    print(f"Tiempos registrados en {RUTA_TIMINGS}")
+    print(f"[TIEMPOS] Tiempos registrados en {RUTA_TIMINGS}")
 
 def main():
     inicio_programa = time.perf_counter()
@@ -417,7 +416,7 @@ def main():
     client.tls_set(ca_certs=CA_CERT_PATH, tls_version=ssl.PROTOCOL_TLS_CLIENT)
     client.tls_insecure_set(False)
     client.connect(BROKER, PORT, 60)
-    print("Conectado al broker MQTT con TLS")
+    print("[MQTT] Conectado al broker MQTT con TLS")
 
     # Publicar parámetros keys por TLS
     client.publish(TOPIC_KEYS, json.dumps(
@@ -428,14 +427,15 @@ def main():
         qos=QOS,
         retain=True
     )
-    time.sleep(0.1)
+    time.sleep(0.5)
 
     client.publish(TOPIC_DATA, json.dumps(data), qos=QOS, retain = True)
+    time.sleep(0.5)
     t_fin_mqtt = time.perf_counter()
     tiempo_mqtt = t_fin_mqtt - t_inicio_mqtt
     print(f"[MQTT] Tiempo de publicación MQTT con TLS: {tiempo_mqtt:.4f} segundos")
     client.disconnect()
-    print("Datos publicados correctamente en MQTT")
+    print("[MQTT] Datos publicados correctamente en MQTT")
     fin_programa = time.perf_counter()
     tiempo_programa = fin_programa - inicio_programa
 
@@ -454,7 +454,7 @@ def main():
     graficar_dispersion(imagen, vector_cifrado)
     graficar_hamming(imagen, vector_cifrado, ancho, alto)
 
-    print("Proceso de cifrado completado")
+    print("[PROGRAMA] Proceso de cifrado completado")
 
 if __name__ == "__main__":
     main()
