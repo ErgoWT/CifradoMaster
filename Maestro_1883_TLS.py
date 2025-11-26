@@ -13,12 +13,13 @@ from PIL import Image
 
 # ========== CONFIGURACION MQTT ==========
 BROKER = "192.168.0.55"
-PORT = 8883
+PORT = 1883
+PORT_TLS = 8883
 QOS = 1
 USERNAME = "usuario1"
 PASSWORD = "qwerty123"
-TOPIC_KEYS = "chaos/keys"
-TOPIC_DATA = "chaos/data"
+TOPIC_KEYS = "chaos1883tls/keys"
+TOPIC_DATA = "chaos1883tls/data"
 CA_CERT_PATH = "/etc/mosquitto/ca_certificates/ca.crt"
 # ========================================
 
@@ -39,9 +40,9 @@ LOGISTIC_PARAMS = {
 }
 
 # ========== RUTAS Y ARCHIVOS ==========
-CARPETA_CIFRADO = Path("CifradoTLS")
+CARPETA_CIFRADO = Path("Cifrado_1883_TLS")
 IMAGEN_ENTRADA = Path("Prueba.jpg")
-RUTA_IMAGEN_CIFRADA = CARPETA_CIFRADO / "ImagenCifrada_TLS.png"
+RUTA_IMAGEN_CIFRADA = CARPETA_CIFRADO / "ImagenCifrada_1883_TLS.png"
 RUTA_TIMINGS = CARPETA_CIFRADO / "tiempos_procesos.csv"
 RUTA_DISPERSION = CARPETA_CIFRADO / "diagrama_dispersion.png"
 RUTA_HAMMING = CARPETA_CIFRADO / "hamming.png"
@@ -331,50 +332,50 @@ def graficar_dispersion(imagen, vector_cifrado):
     plt.savefig(str(RUTA_DISPERSION))
     print(f"[GRAFICA] Dispersión guardada en {RUTA_DISPERSION}")
 
-def graficar_hamming(imagen, vector_cifrado, ancho, alto):
-    """
-    Se calcula la distancia Hamming entre la imagen original y la cifrada
-    """
-    # Imagen original en bytes (0-255)
-    orig_img = np.array(imagen).astype(np.uint8)
-    orig_flat = orig_img.flatten()
+# def graficar_hamming(imagen, vector_cifrado, ancho, alto):
+#     """
+#     Se calcula la distancia Hamming entre la imagen original y la cifrada
+#     """
+#     # Imagen original en bytes (0-255)
+#     orig_img = np.array(imagen).astype(np.uint8)
+#     orig_flat = orig_img.flatten()
 
-    # Reconstruir la pseudo-imagen cifrada en 0-255 (igual que en graficas)
-    cifrado_norm = (vector_cifrado - np.min(vector_cifrado)) / (
-        np.max(vector_cifrado) - np.min(vector_cifrado) + 1e-12
-    )
-    cifrado_img = (cifrado_norm * 255).reshape((alto, ancho, 3)).astype(np.uint8)
-    cifrado_flat = cifrado_img.flatten()
+#     # Reconstruir la pseudo-imagen cifrada en 0-255 (igual que en graficas)
+#     cifrado_norm = (vector_cifrado - np.min(vector_cifrado)) / (
+#         np.max(vector_cifrado) - np.min(vector_cifrado) + 1e-12
+#     )
+#     cifrado_img = (cifrado_norm * 255).reshape((alto, ancho, 3)).astype(np.uint8)
+#     cifrado_flat = cifrado_img.flatten()
 
-    # Asegurar misma longitud
-    n_bytes = min(orig_flat.size, cifrado_flat.size)
-    orig_flat = orig_flat[:n_bytes]
-    cifrado_flat = cifrado_flat[:n_bytes]
+#     # Asegurar misma longitud
+#     n_bytes = min(orig_flat.size, cifrado_flat.size)
+#     orig_flat = orig_flat[:n_bytes]
+#     cifrado_flat = cifrado_flat[:n_bytes]
 
-    # Convertir a bits
-    orig_bits = np.unpackbits(orig_flat)
-    cifrado_bits = np.unpackbits(cifrado_flat)
+#     # Convertir a bits
+#     orig_bits = np.unpackbits(orig_flat)
+#     cifrado_bits = np.unpackbits(cifrado_flat)
 
-    n_bits = min(orig_bits.size, cifrado_bits.size)
-    orig_bits = orig_bits[:n_bits]
-    cifrado_bits = cifrado_bits[:n_bits]
+#     n_bits = min(orig_bits.size, cifrado_bits.size)
+#     orig_bits = orig_bits[:n_bits]
+#     cifrado_bits = cifrado_bits[:n_bits]
 
-    # Distancia Hamming absoluta y normalizada
-    hamming_abs = np.sum(orig_bits != cifrado_bits)
-    hamming_norm = hamming_abs / n_bits
+#     # Distancia Hamming absoluta y normalizada
+#     hamming_abs = np.sum(orig_bits != cifrado_bits)
+#     hamming_norm = hamming_abs / n_bits
 
-    print(f"[HAMMING] Distancia Hamming absoluta: {hamming_abs}")
-    print(f"[HAMMING] Distancia Hamming normalizada: {hamming_norm:.6f}")
+#     print(f"[HAMMING] Distancia Hamming absoluta: {hamming_abs}")
+#     print(f"[HAMMING] Distancia Hamming normalizada: {hamming_norm:.6f}")
 
-    # Gráfica sencilla con el valor normalizado
-    plt.figure(figsize=(8, 8))
-    plt.bar(["Hamming"], [hamming_norm])
-    plt.ylim(0, 1)
-    plt.ylabel("Distancia Hamming normalizada")
-    plt.title(f"Distancia Hamming (norm.): {hamming_norm:.4f}")
-    plt.tight_layout()
-    plt.savefig(str(RUTA_HAMMING))
-    print(f"[GRAFICA] Hamming guardada en {RUTA_HAMMING}")
+#     # Gráfica sencilla con el valor normalizado
+#     plt.figure(figsize=(8, 8))
+#     plt.bar(["Hamming"], [hamming_norm])
+#     plt.ylim(0, 1)
+#     plt.ylabel("Distancia Hamming normalizada")
+#     plt.title(f"Distancia Hamming (norm.): {hamming_norm:.4f}")
+#     plt.tight_layout()
+#     plt.savefig(str(RUTA_HAMMING))
+#     print(f"[GRAFICA] Hamming guardada en {RUTA_HAMMING}")
 
 
 def registrar_tiempos(tiempo_difusion, tiempo_rossler, tiempo_confusion, tiempo_mqtt, tiempo_programa):
@@ -411,15 +412,15 @@ def main():
 
     # 5. Publicar en MQTT con TLS
     t_inicio_mqtt = time.perf_counter()
-    client = mqtt.Client()
-    client.username_pw_set(USERNAME, PASSWORD)
-    client.tls_set(ca_certs=CA_CERT_PATH, tls_version=ssl.PROTOCOL_TLS_CLIENT)
-    client.tls_insecure_set(False)
-    client.connect(BROKER, PORT, 60)
+    client_keys = mqtt.Client()
+    client_keys.username_pw_set(USERNAME, PASSWORD)
+    client_keys.tls_set(ca_certs=CA_CERT_PATH, tls_version=ssl.PROTOCOL_TLS_CLIENT)
+    client_keys.tls_insecure_set(False)
+    client_keys.connect(BROKER, PORT_TLS, 60)
     print("[MQTT] Conectado al broker MQTT con TLS")
 
     # Publicar parámetros keys por TLS
-    client.publish(TOPIC_KEYS, json.dumps(
+    client_keys.publish(TOPIC_KEYS, json.dumps(
         {
             "ROSSLER_PARAMS": ROSSLER_PARAMS,
             "LOGISTIC_PARAMS": LOGISTIC_PARAMS
@@ -428,13 +429,18 @@ def main():
         retain=True
     )
     time.sleep(0.5)
+    client_keys.disconnect()
+
+    client = mqtt.Client()
+    client.username_pw_set(USERNAME, PASSWORD)
+    client.connect(BROKER, PORT, 60)
 
     client.publish(TOPIC_DATA, json.dumps(data), qos=QOS, retain = True)
     time.sleep(0.5)
     t_fin_mqtt = time.perf_counter()
     tiempo_mqtt = t_fin_mqtt - t_inicio_mqtt
-    print(f"[MQTT] Tiempo de publicación MQTT con TLS: {tiempo_mqtt:.4f} segundos")
     client.disconnect()
+    print(f"[MQTT] Tiempo de publicación MQTT con TLS y 1883: {tiempo_mqtt:.4f} segundos")
     print("[MQTT] Datos publicados correctamente en MQTT")
     fin_programa = time.perf_counter()
     tiempo_programa = fin_programa - inicio_programa
@@ -452,7 +458,7 @@ def main():
     # 6. Generar gráficas
     graficas(imagen, difusion, vector_cifrado, ancho, alto)
     graficar_dispersion(imagen, vector_cifrado)
-    graficar_hamming(imagen, vector_cifrado, ancho, alto)
+    # graficar_hamming(imagen, vector_cifrado, ancho, alto)
 
     print("[PROGRAMA] Proceso de cifrado completado")
 

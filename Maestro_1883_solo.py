@@ -1,7 +1,6 @@
 # IMPORTS
 import json
 import time
-import ssl
 from pathlib import Path
 # ============================================
 import numpy as np
@@ -13,13 +12,12 @@ from PIL import Image
 
 # ========== CONFIGURACION MQTT ==========
 BROKER = "192.168.0.55"
-PORT = 8883
+PORT = 1883
 QOS = 1
 USERNAME = "usuario1"
 PASSWORD = "qwerty123"
-TOPIC_KEYS = "chaos/keys"
-TOPIC_DATA = "chaos/data"
-CA_CERT_PATH = "/etc/mosquitto/ca_certificates/ca.crt"
+TOPIC_KEYS = "chaos1883/keys"
+TOPIC_DATA = "chaos1883/data"
 # ========================================
 
 # ========== PARAMETROS DE CIFRADO ==========
@@ -39,9 +37,9 @@ LOGISTIC_PARAMS = {
 }
 
 # ========== RUTAS Y ARCHIVOS ==========
-CARPETA_CIFRADO = Path("CifradoTLS")
+CARPETA_CIFRADO = Path("Cifrado_1883_solo")
 IMAGEN_ENTRADA = Path("Prueba.jpg")
-RUTA_IMAGEN_CIFRADA = CARPETA_CIFRADO / "ImagenCifrada_TLS.png"
+RUTA_IMAGEN_CIFRADA = CARPETA_CIFRADO / "ImagenCifrada_1883_solo.png"
 RUTA_TIMINGS = CARPETA_CIFRADO / "tiempos_procesos.csv"
 RUTA_DISPERSION = CARPETA_CIFRADO / "diagrama_dispersion.png"
 RUTA_HAMMING = CARPETA_CIFRADO / "hamming.png"
@@ -413,10 +411,8 @@ def main():
     t_inicio_mqtt = time.perf_counter()
     client = mqtt.Client()
     client.username_pw_set(USERNAME, PASSWORD)
-    client.tls_set(ca_certs=CA_CERT_PATH, tls_version=ssl.PROTOCOL_TLS_CLIENT)
-    client.tls_insecure_set(False)
     client.connect(BROKER, PORT, 60)
-    print("[MQTT] Conectado al broker MQTT con TLS")
+    print("[MQTT] Conectado al broker MQTT con puerto 1883")
 
     # Publicar parámetros keys por TLS
     client.publish(TOPIC_KEYS, json.dumps(
@@ -428,12 +424,11 @@ def main():
         retain=True
     )
     time.sleep(0.5)
-
     client.publish(TOPIC_DATA, json.dumps(data), qos=QOS, retain = True)
     time.sleep(0.5)
     t_fin_mqtt = time.perf_counter()
     tiempo_mqtt = t_fin_mqtt - t_inicio_mqtt
-    print(f"[MQTT] Tiempo de publicación MQTT con TLS: {tiempo_mqtt:.4f} segundos")
+    print(f"[MQTT] Tiempo de publicación MQTT con puerto 1883: {tiempo_mqtt:.4f} segundos")
     client.disconnect()
     print("[MQTT] Datos publicados correctamente en MQTT")
     fin_programa = time.perf_counter()
