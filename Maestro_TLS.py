@@ -1,55 +1,94 @@
-import numpy as np
+# IMPORTS
 import json
 import time
+import ssl
+from pathlib import Path
+# ============================================
+import numpy as np
 import pandas as pd
 import paho.mqtt.client as mqtt
 import matplotlib.pyplot as plt
-import ssl
 from scipy.integrate import solve_ivp
 from PIL import Image
 
 # ========== CONFIGURACION MQTT ==========
-broker = "192.168.0.55"
-port = 1883
-port_tls = 8883
-username = "usuario1"
-password = "qwerty123"
-topicKeys = "chaos/keys"
-topicData = "chaos/data"
-ca_cert_path = "/etc/mosquitto/ca_certificates/ca.crt"
+BROKER = "192.168.0.55"
+PORT = 8883
+QOS = 1
+USERNAME = "usuario1"
+PASSWORD = "qwerty123"
+TOPIC_KEYS = "chaos/keys"
+TOPIC_DATA = "chaos/data"
+CA_CERT_PATH = "/etc/mosquitto/ca_certificates/ca.crt"
 # ========================================
 
 # ========== PARAMETROS DE CIFRADO ==========
 # Parámetros para Rössler
-rosslerParams = {
+ROSSLER_PARAMS = {
     "a": 0.2,
     "b": 0.2,
     "c": 5.7,
 }
+TIME_SINC = 2500 # Tiempo de sincronización experimental
+H = 0.01 # Paso de integración
+Y0 = [0.1, 0.1, 0.1] # Condiciones iniciales del sistema de Rössler
 # Parámetros para Logistic Map
-logisticParams = {
+LOGISTIC_PARAMS = {
     "aLog": 3.99,
     "x0_log": 0.4
 }
 
-# ========== FUNCIÓN DE DIFUSIÓN ==========
-def aplicar_difusion(imagen, a_log, x0_log):
-    # Se aplica la etapa de difusión utilizando
-    # el mapa logistico
-    # Se convierte la imagen a un vector y se normaliza
-    img = np.array(imagen) # Convertir imagen a array numpy
-    alto, ancho, canales = img.shape # Obtener dimensiones de la imagen
-    vector_inf = img.flatten() # Convertir imagen a vector 1D
-    nmax = vector_inf.size # Tamaño del vector
-    vector_inf = vector_inf / 255.0 # Normalizar valores entre 0 y 1
+# ========== RUTAS Y ARCHIVOS ==========
+CARPETA_CIFRADO = Path("Cifrado")
+IMAGEN_ENTRADA = Path("Prueba2.jpg")
+RUTA_IMAGEN_CIFRADA = CARPETA_CIFRADO / "ImagenCifrada_TLS.png"
+RUTA_TIMINGS = CARPETA_CIFRADO / "tiempos_procesos.csv"
+RUTA_DISPERSION = CARPETA_CIFRADO / "diagrama_dispersion.png"
+RUTA_HAMMING = CARPETA_CIFRADO / "hamming.png"
 
-    print("APLICANDO DIFUSIÓN...")
+# ========== SISTEMA DE RÖSSLER ==========
+def rossler_maestro(t, state, a, b, c):
+    # Ecuaciones del sistema de Rössler
+    x, y, z = state
+    dxdt = -y - z
+    dydt = x + a * y
+    dzdt = b + z * (x - c)
+    return [dxdt, dydt, dzdt]
+
+# ========== FUNCIÓN DE DIFUSIÓN ==========
+def aplicar_difusion(vector_inf, nmax):
+    """
+    Aquí aplicamos la etapa de difusón a la imagen utilizando el mapa logístico
+    Parámetros:
+    ----------
+    imagen : PIL.Image
+        Es una imagen RGB, que se va a cifrar
+    a_log : float
+        Parámetro de control del mapa logístico (3.57 < a_log <= 4) para generar caos
+    x0_log : float
+        Condición inicial del mapa logístico (0 < x0_log < 1)
+    
+    Retorna:
+    -------
+    difusion : np.ndarray
+        Vector 1D normalizado en [0, 1] con la imagen difundida
+    vector_logistico : np.ndarray
+        Secuencia del mapa logístico usado como máscara de difusión
+    """
+    # Resumen:
+    # 1) Se genera una secuencia logística
+    # 2) Se generan posiciones de mezcla a partir de la secuencia logística
+    # 3) Se aplica la difusión permutando los píxeles de la imagen según las posiciones generadas
+    
+
+    print("[DIFUSION] INICIANDO...")
+    t_inicio_difusion = time.perf_counter()
 
     # 1. Generamos el vector logístico
     vector_logistico = np.zeros(nmax)
-    x = x0_log
+    x = LOGISTIC_PARAMS['x0_log']
     for i in range(nmax):
-        x = a_log * x * (1 - x)
+        x = LOGISTIC_PARAMS['aLog'] * x * (1 - x)
         vector_logistico[i] = x
 
     # 2. Generamos el vector mezcla (posiciones)
@@ -120,39 +159,58 @@ def aplicar_difusion(imagen, a_log, x0_log):
     #     vector_temp[0] = 260.0 (marcamos como usado)
     #   Contador incrementa
 
-
+    t_fin_difusion = time.perf_counter()
+    tiempo_difusion = t_fin_difusion - t_inicio_difusion
+    print(f"[DIFUSION] Tiempo de difusión: {tiempo_difusion:.4f} segundos")
     print("DIFUSIÓN COMPLETADA")
+    
 
-    return difusion, vector_logistico, ancho, alto, nmax
-
-def rossler_maestro(t, state, a, b, c):
-    # Ecuaciones del sistema de Rössler
-    x, y, z = state
-    dxdt = -y - z
-    dydt = x + a * y
-    dzdt = b + z * (x - c)
-    return [dxdt, dydt, dzdt]
+    return difusion, vector_logistico, tiempo_difusion
 
 def aplicar_confusion(difusion, vector_logistico, nmax, rosslerParams):
-    # Se aplica la etapa de confusión utilizando el oscilador de Rössler
-    time_sinc = 2500
-    keystream = 20000
-    h = 0.01
-    y0 = [0.1, 0.1, 0.1]  # Condiciones iniciales del sistema de Rössler
+    """
+    Se aplica la etapa de confusión utilizando el oscilador de Rössler
+    Parámetros:
+    ----------
+    difusion : np.ndarray
+        Vector 1D normalizado en [0, 1] con la imagen difundida
+    vector_logistico : np.ndarray
+        Secuencia del mapa logístico usado como máscara de difusión (se suma en confusión)
+    nmax : int
+        Número total de elementos en el vector de la imagen (ancho * alto * 3)
+    rosslerParams : dict
+        Parámetros del sistema de Rössler (a, b, c)
+    Retorna:
+    -------
+    vector_cifrado : np.ndarray
+        Vector 1D normalizado en [0, 1] con la imagen cifrada, resultado de sumar difusión,
+        secuencia logística y la señal x del sistema de Rössler
+    y_sinc : np.ndarray
+        Trayectoria y del sistema de Rössler (usada para sincronización)
+    t : np.ndarray
+        Vector de tiempos correspondiente a las trayectorias del sistema de Rössler
+    """
+
+    # Resumen:
+    # 1) Se resuelve el sistema de Rössler para obtener las trayectorias
+    # 2) Tras un tiempo de sincronización, se extrae la señal x para confusión
+    # 3) Esa señal se redimensiona a nmax y se suma a la difusión y la secuencia logística
+    #    para obtener el vector cifrado final
     
     print("APLICANDO CONFUSIÓN...")
+    t_inicio_confusion = time.perf_counter()
 
     # 1. Se calculan las iteraciones totales (sincronización + cifrado)
-    iteraciones = time_sinc + keystream
+    iteraciones = TIME_SINC + nmax
     print(f"Iteraciones totales: {iteraciones}")
 
     # 2. Resolver el sistema de Rössler
-    t_span = (0, iteraciones * h)
-    t_eval = np.linspace(0, iteraciones * h, iteraciones)
-
+    t_span = (0, iteraciones * H)
+    t_eval = np.linspace(0, iteraciones * H, iteraciones)
+    t_inicio_rossler = time.perf_counter()
     solucion = solve_ivp(
         fun = rossler_maestro,
-        y0 = y0,
+        y0 = Y0,
         args = tuple(rosslerParams.values()),
         t_span = t_span,
         t_eval = t_eval,
@@ -160,117 +218,243 @@ def aplicar_confusion(difusion, vector_logistico, nmax, rosslerParams):
         rtol = 1e-8,
         atol = 1e-8
     )
+    t_fin_rossler = time.perf_counter()
+    tiempo_rossler = t_fin_rossler - t_inicio_rossler
 
     # 3. Extraer las trayectorias del sistema de Rössler
-    x = solucion.y[0][time_sinc:] # Para la confusion
+    x = solucion.y[0][TIME_SINC:] # Para la confusion
     y = solucion.y[1] # Para sincronizacion
     t = solucion.t
-
-    x_cif = np.resize(x, nmax)  # Redimensionar para que coincida con nmax
 
     # 4. Aplicar confusión (solo después del tiempo de sincronización)
     vector_cifrado = np.zeros(nmax)
     print("Aplicando confusión a los datos...")
-    vector_cifrado = difusion + vector_logistico + x_cif
+    vector_cifrado = difusion + vector_logistico + x
     print("Confusión aplicada correctamente")
 
-    return vector_cifrado, y, t
+    t_fin_confusion = time.perf_counter()
+    tiempo_confusion = t_fin_confusion - t_inicio_confusion
 
-# ========== PRINCIPAL ==========
-if __name__ == "__main__":
-    # 1. Cargar la imagen
-    imagen = Image.open("Prueba.jpg")
-    print("Imagen cargada correctamente")
+    print(f"[CONFUSIÓN] Tiempo de integración de Rössler: {tiempo_rossler:.4f} segundos")
+    print(f"[CONFUSIÓN] Tiempo total de confusión: {tiempo_confusion:.4f} segundos")
 
-    # 2. Aplicar la etapa de difusión
-    difusion, vector_logistico, ancho, alto, nmax = aplicar_difusion(
-        imagen,
-        logisticParams['aLog'],
-        logisticParams['x0_log']
-    )
+    return vector_cifrado, y, t, tiempo_rossler, tiempo_confusion
 
-    print("\nPAUSA")
-    time.sleep(2)
-    # 3. Aplicar la etapa de confusión
-    vector_cifrado, y_sinc, t = aplicar_confusion(
-        difusion,
-        vector_logistico,
-        nmax,
-        rosslerParams
-    )
+def cargar_imagen():
+    """
+    Cargamos la imagen de entrada definida en IMAGEN_ENTRADA
 
-    # 4. Preparar datos para MQTT
+    Retorna:
+    -------
+    imagen : PIL.Image
+        Imagen cargada desde el archivo, siendo esta RGB que se va a cifrar
+    """
+    imagen = Image.open(IMAGEN_ENTRADA)
+    vector_inf = np.array(imagen)
+    alto, ancho, canales = vector_inf.shape
+    vector_inf = vector_inf.flatten().astype(np.float32)/255.0
+    nmax = vector_inf.size
+    print("Imagen cargada y vectorizada correctamente")
+    return imagen, vector_inf, ancho, alto, nmax
+
+def preparar_payload(vector_cifrado, y_sinc, t, ancho, alto, nmax):
+    """
+    Se prepara el diccionario de datos para envíar mediante MQTT
+
+    Retorna:
+    -------
+    data : dict
+        Diccionario con los datos necesarios para el descifrado
+    """
+
     data = {
-        'vector_cifrado': vector_cifrado.tolist(),
-        'y_sinc': y_sinc.tolist(),
-        'times': t.tolist(),
-        'ancho': ancho,
-        'alto': alto,
-        'nmax': nmax,
-        'time_sinc': 2500,
-        'keystream': 20000
+        "vector_cifrado": vector_cifrado.tolist(),
+        "y_sinc": y_sinc.tolist(),
+        "times": t.tolist(),
+        "ancho": ancho,
+        "alto": alto,
+        "nmax": nmax,
+        "time_sinc": TIME_SINC,
     }
+    return data
 
-    # 5. Configurar y enviar los datos a través de MQTT
-    # Cliente TLS SOLO para topicKeys (8883)
-    client_keys = mqtt.Client()
-    client_keys.username_pw_set(username, password)
-    client_keys.tls_set(ca_certs=ca_cert_path, tls_version=ssl.PROTOCOL_TLS_CLIENT)
-    client_keys.tls_insecure_set(False)
-    client_keys.connect(broker, port_tls, 60)
-    print("Conectado (TLS) para topicKeys")
-
-    # Publicar llaves por 8883/TLS
-    client_keys.publish(topicKeys, json.dumps({
-        'rosslerParams': rosslerParams,
-        'logisticParams': logisticParams
-    }), retain=True)
-    client_keys.disconnect()
-
-    # Cliente SIN TLS para topicData (1883) — se mantiene igual
-    client = mqtt.Client()
-    client.username_pw_set(username, password)
-    client.connect(broker, port, 60)
-    print("Conectado (sin TLS) para topicData")
-
-    # Publicar datos cifrados por 1883 (sin cambios en payload)
-    client.publish(topicData, json.dumps(data), retain=True)
-    client.disconnect()
-
-     # 6. Visualización final
+def graficas(imagen, difusion, vector_cifrado, ancho, alto):
+    """
+    Genera y guarda la figura comparativa:
+    original, después de difusión y después de confusión.
+    """
     plt.figure(figsize=(15, 5))
-    
+
     # Original
     plt.subplot(1, 3, 1)
     plt.imshow(imagen)
     plt.title("Original")
-    plt.axis('off')
-    
+    plt.axis("off")
+
     # Después de difusión
     plt.subplot(1, 3, 2)
     difusion_img = (difusion * 255).reshape((alto, ancho, 3)).astype(np.uint8)
     plt.imshow(difusion_img)
     plt.title("Después de Difusión")
-    plt.axis('off')
-    
+    plt.axis("off")
+
     # Después de confusión (pseudo-imagen)
     plt.subplot(1, 3, 3)
-    cifrado_img = ((vector_cifrado - np.min(vector_cifrado)) / 
-                  (np.max(vector_cifrado) - np.min(vector_cifrado)) * 255
+    cifrado_img = (
+        (vector_cifrado - np.min(vector_cifrado))
+        / (np.max(vector_cifrado) - np.min(vector_cifrado))
+        * 255
     ).reshape((alto, ancho, 3)).astype(np.uint8)
     plt.imshow(cifrado_img)
     plt.title("Después de Confusión")
-    plt.axis('off')
-    
-    plt.tight_layout()
-    plt.savefig("Cifrado/ImagenCifradav2.png")
-    print("Resultados del proceso completo guardados en Cifrado/ImagenCifradav2.png")
+    plt.axis("off")
 
-    # 7. Guardar componentes para análisis
-    trayectoria_y = {
-        't': t.tolist(),
-        'y_sinc': y_sinc.tolist()
-    }
-    pd.DataFrame(trayectoria_y).to_csv('Cifrado/trayectoria_y_sinc.csv', index=False)
+    plt.tight_layout()
+    plt.savefig(RUTA_IMAGEN_CIFRADA)
+    print(f"Resultados del proceso completo guardados en {RUTA_IMAGEN_CIFRADA}")
+
+def graficar_dispersion(imagen, vector_cifrado):
+    """
+    Genera y guarda el diagrama de dispersión entre la imagen original y la cifrada
+    Ambas están normalizadas
+    """
+    img_original = np.array(imagen).flatten().astype(np.float32)/255.0
     
-    print("\n--- CIFRADO COMPLETO ---")
+    cifrado_normalizado = (vector_cifrado - np.min(vector_cifrado)) / (
+        np.max(vector_cifrado) - np.min(vector_cifrado) + 1e-12
+    )
+    plt.figure(figsize=(6, 6))
+    plt.scatter(img_original, cifrado_normalizado, s=1, alpha=0.3)
+    plt.xlabel("Original (normalizada)")
+    plt.ylabel("Cifrada (normalizada)")
+    plt.title("Diagrama de dispersión: imagen original vs cifrada")
+    plt.tight_layout()
+    plt.savefig(str(RUTA_DISPERSION))
+    print(f"[GRAFICA] Dispersión guardada en {RUTA_DISPERSION}")
+
+def graficar_hamming(imagen, vector_cifrado, ancho, alto):
+    """
+    Se calcula la distancia Hamming entre la imagen original y la cifrada
+    """
+    # Imagen original en bytes (0-255)
+    orig_img = np.array(imagen).astype(np.uint8)
+    orig_flat = orig_img.flatten()
+
+    # Reconstruir la pseudo-imagen cifrada en 0-255 (igual que en graficas)
+    cifrado_norm = (vector_cifrado - np.min(vector_cifrado)) / (
+        np.max(vector_cifrado) - np.min(vector_cifrado) + 1e-12
+    )
+    cifrado_img = (cifrado_norm * 255).reshape((alto, ancho, 3)).astype(np.uint8)
+    cifrado_flat = cifrado_img.flatten()
+
+    # Asegurar misma longitud
+    n_bytes = min(orig_flat.size, cifrado_flat.size)
+    orig_flat = orig_flat[:n_bytes]
+    cifrado_flat = cifrado_flat[:n_bytes]
+
+    # Convertir a bits
+    orig_bits = np.unpackbits(orig_flat)
+    cifrado_bits = np.unpackbits(cifrado_flat)
+
+    n_bits = min(orig_bits.size, cifrado_bits.size)
+    orig_bits = orig_bits[:n_bits]
+    cifrado_bits = cifrado_bits[:n_bits]
+
+    # Distancia Hamming absoluta y normalizada
+    hamming_abs = np.sum(orig_bits != cifrado_bits)
+    hamming_norm = hamming_abs / n_bits
+
+    print(f"[HAMMING] Distancia Hamming absoluta: {hamming_abs}")
+    print(f"[HAMMING] Distancia Hamming normalizada: {hamming_norm:.6f}")
+
+    # Gráfica sencilla con el valor normalizado
+    plt.figure(figsize=(8, 8))
+    plt.bar(["Hamming"], [hamming_norm])
+    plt.ylim(0, 1)
+    plt.ylabel("Distancia Hamming normalizada")
+    plt.title(f"Distancia Hamming (norm.): {hamming_norm:.4f}")
+    plt.tight_layout()
+    plt.savefig(str(RUTA_HAMMING))
+    print(f"[GRAFICA] Hamming guardada en {RUTA_HAMMING}")
+
+
+def registrar_tiempos(tiempo_difusion, tiempo_rossler, tiempo_confusion, tiempo_mqtt, tiempo_programa):
+    """
+    Se registran las métricas de tiempo para cada proceso en un archivo CSV
+    """
+    registro = {
+        "timestamp": time.strftime("%m-%d %H:%M:%S"),
+        "tiempo_difusion_segundos": tiempo_difusion,
+        "tiempo_rossler_segundos": tiempo_rossler,
+        "tiempo_confusion_segundos": tiempo_confusion,
+        "tiempo_mqtt_segundos": tiempo_mqtt,
+        "tiempo_programa_segundos": tiempo_programa
+    }
+
+    df = pd.DataFrame([registro])
+    archivo = RUTA_TIMINGS.exists()
+    df.to_csv(RUTA_TIMINGS, mode='a', index = False, header = not archivo)
+    print(f"Tiempos registrados en {RUTA_TIMINGS}")
+
+def main():
+    inicio_programa = time.perf_counter()
+    # 1. Cargar la imagen
+    imagen, vector_inf, ancho, alto, nmax = cargar_imagen()
+
+    # 2. Aplicar difusión
+    difusion, vector_logistico, tiempo_difusion = aplicar_difusion(vector_inf, nmax)
+
+    # 3. Aplicar confusión
+    vector_cifrado, y_sinc, t, tiempo_rossler, tiempo_confusion = aplicar_confusion(difusion, vector_logistico, nmax, ROSSLER_PARAMS)
+
+    # 4. Preparar datos para MQTT
+    data = preparar_payload(vector_cifrado, y_sinc, t, ancho, alto, nmax)
+
+    # 5. Publicar en MQTT con TLS
+    t_inicio_mqtt = time.perf_counter()
+    client = mqtt.Client()
+    client.username_pw_set(USERNAME, PASSWORD)
+    client.tls_set(ca_certs=CA_CERT_PATH, tls_version=ssl.PROTOCOL_TLS_CLIENT)
+    client.tls_insecure_set(False)
+    client.connect(BROKER, PORT, 60)
+    print("Conectado al broker MQTT con TLS")
+
+    # Publicar parámetros keys por TLS
+    client.publish(TOPIC_KEYS, json.dumps(
+        {
+            "ROSSLER_PARAMS": ROSSLER_PARAMS,
+            "LOGISTIC_PARAMS": LOGISTIC_PARAMS
+        }),
+        qos=QOS,
+        retain=True
+    )
+    time.sleep(0.1)
+
+    client.publish(TOPIC_DATA, json.dumps(data), qos=QOS, retain = True)
+    t_fin_mqtt = time.perf_counter()
+    tiempo_mqtt = t_fin_mqtt - t_inicio_mqtt
+    print(f"[MQTT] Tiempo de publicación MQTT con TLS: {tiempo_mqtt:.4f} segundos")
+    client.disconnect()
+    print("Datos publicados correctamente en MQTT")
+    fin_programa = time.perf_counter()
+    tiempo_programa = fin_programa - inicio_programa
+
+    print(f"[PROGRAMA] Tiempo total del programa: {tiempo_programa:.4f} segundos")
+
+    registrar_tiempos(
+        tiempo_difusion,
+        tiempo_rossler,
+        tiempo_confusion,
+        tiempo_mqtt,
+        tiempo_programa
+    )
+
+    # 6. Generar gráficas
+    graficas(imagen, difusion, vector_cifrado, ancho, alto)
+    graficar_dispersion(imagen, vector_cifrado)
+    graficar_hamming(imagen, vector_cifrado, ancho, alto)
+
+    print("Proceso de cifrado completado")
+
+if __name__ == "__main__":
+    main()
