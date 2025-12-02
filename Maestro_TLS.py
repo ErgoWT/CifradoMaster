@@ -12,7 +12,7 @@ from scipy.integrate import solve_ivp
 from PIL import Image
 
 # ========== CONFIGURACION MQTT ==========
-BROKER = "192.168.0.55"
+BROKER = "192.168.50.230"
 PORT = 8883
 QOS = 1
 USERNAME = "usuario1"
