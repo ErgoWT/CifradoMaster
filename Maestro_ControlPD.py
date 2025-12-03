@@ -28,7 +28,7 @@ ROSSLER_PARAMS = {
 }
 H = 0.01
 Y0 = [0.1, 0.1, 0.1]
-KEYSTREAM = 20000
+KEYSTREAM = 10000
 
 # Rutas y archivos
 CARPETA_RESULTADOS = Path("Resultados_ControlPD")
@@ -41,8 +41,8 @@ def rossler_maestro(t, state, a, b, c):
     return [dxdt, dydt, dzdt]
 
 def solucion_rossler(ROSSLER_PARAMS):
-    t_span = (0, H * KEYSTREAM)
-    t_eval = np.arange(0, H * KEYSTREAM, H)
+    t_span = (0, 75.0)
+    t_eval = np.arange(0, 75.0, H)
 
     sol = solve_ivp(
         fun = rossler_maestro,
