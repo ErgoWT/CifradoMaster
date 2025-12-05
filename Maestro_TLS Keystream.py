@@ -41,7 +41,7 @@ LOGISTIC_PARAMS = {
 
 # ========== RUTAS Y ARCHIVOS ==========
 CARPETA_CIFRADO = Path("CifradoTLS_KEYSTREAM")
-IMAGEN_ENTRADA = Path("Prueba.jpg")
+IMAGEN_ENTRADA = Path("Prueba2.jpg")
 RUTA_IMAGEN_CIFRADA = CARPETA_CIFRADO / "ImagenCifrada_TLS.png"
 RUTA_TIMINGS = CARPETA_CIFRADO / "tiempos_procesos.csv"
 RUTA_DISPERSION = CARPETA_CIFRADO / "diagrama_dispersion.png"
@@ -216,8 +216,8 @@ def aplicar_confusion(difusion, vector_logistico, nmax, rosslerParams):
         t_span = t_span,
         t_eval = t_eval,
         method = 'RK45',
-        rtol = 1e-8,
-        atol = 1e-8
+        rtol = 1e-5,
+        atol = 1e-5
     )
     t_fin_rossler = time.perf_counter()
     tiempo_rossler = t_fin_rossler - t_inicio_rossler
@@ -379,7 +379,6 @@ def graficar_hamming(imagen, vector_cifrado, ancho, alto):
     plt.tight_layout()
     plt.savefig(str(RUTA_HAMMING))
     print(f"[GRAFICA] Hamming guardada en {RUTA_HAMMING}")
-
 
 def registrar_tiempos(tiempo_difusion, tiempo_rossler, tiempo_confusion, tiempo_mqtt, tiempo_programa):
     """
