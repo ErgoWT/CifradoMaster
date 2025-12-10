@@ -254,7 +254,7 @@ def cargar_imagen():
     imagen = Image.open(IMAGEN_ENTRADA)
     vector_inf = np.array(imagen)
     alto, ancho, canales = vector_inf.shape
-    vector_inf = vector_inf.flatten().astype(np.float32)/255.0
+    vector_inf = vector_inf.flatten().astype(np.float64)/255.0
     nmax = vector_inf.size
     print("[CARGA] Imagen cargada y vectorizada correctamente")
     return imagen, vector_inf, ancho, alto, nmax
@@ -295,19 +295,20 @@ def graficas(imagen, difusion, vector_cifrado, ancho, alto):
     plt.axis("off")
 
     # Después de difusión
+    difusion_img = np.clip(difusion, 0.0, 1.0)
+    difusion_img = np.round(difusion_img*255.0).astype(np.uint8).reshape((alto, ancho, 3))
     plt.subplot(1, 3, 2)
-    difusion_img = (difusion * 255).reshape((alto, ancho, 3)).astype(np.uint8)
     plt.imshow(difusion_img)
     plt.title("Después de Difusión")
     plt.axis("off")
 
     # Después de confusión (pseudo-imagen)
+    cifrado_norm = (vector_cifrado - np.min(vector_cifrado)) / (
+        np.max(vector_cifrado) - np.min(vector_cifrado) + 1e-12
+    )
+    cifrado_img = np.clip(cifrado_norm, 0.0, 1.0)
+    cifrado_img = np.round(cifrado_img*255.0).astype(np.uint8).reshape((alto, ancho, 3))
     plt.subplot(1, 3, 3)
-    cifrado_img = (
-        (vector_cifrado - np.min(vector_cifrado))
-        / (np.max(vector_cifrado) - np.min(vector_cifrado))
-        * 255
-    ).reshape((alto, ancho, 3)).astype(np.uint8)
     plt.imshow(cifrado_img)
     plt.title("Después de Confusión")
     plt.axis("off")
