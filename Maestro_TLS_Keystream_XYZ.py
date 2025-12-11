@@ -46,6 +46,11 @@ RUTA_IMAGEN_CIFRADA = CARPETA_CIFRADO / "ImagenCifrada_TLS.png"
 RUTA_TIMINGS = CARPETA_CIFRADO / "tiempos_procesos.csv"
 RUTA_DISPERSION = CARPETA_CIFRADO / "diagrama_dispersion.png"
 RUTA_HAMMING = CARPETA_CIFRADO / "hamming.png"
+RUTA_SERIES_VECTORES = CARPETA_CIFRADO / "series_difusion_logistico_rossler.png"
+RUTA_VECTOR_CIFRADO_SERIE = CARPETA_CIFRADO / "vector_cifrado.png"
+
+# ========== CONSTANTES AUXILIARES ==========
+PUNTOS_EVAL = 40000  # Número de puntos a evaluar en las gráficas
 
 # ========== SISTEMA DE RÖSSLER ==========
 def rossler_maestro(t, state, a, b, c):
@@ -242,7 +247,7 @@ def aplicar_confusion(difusion, vector_logistico, nmax, rosslerParams):
     print(f"[CONFUSION] Tiempo de integración de Rössler: {tiempo_rossler:.4f} segundos")
     print(f"[CONFUSION] Tiempo total de confusión: {tiempo_confusion:.4f} segundos")
 
-    return vector_cifrado, x, y, z, t, tiempo_rossler, tiempo_confusion
+    return vector_cifrado, x, x_key, y, z, t, tiempo_rossler, tiempo_confusion
 
 def cargar_imagen():
     """
@@ -320,6 +325,49 @@ def graficas(imagen, difusion, vector_cifrado, ancho, alto):
     plt.tight_layout()
     plt.savefig(RUTA_IMAGEN_CIFRADA)
     print(f"Resultados del proceso completo guardados en {RUTA_IMAGEN_CIFRADA}")
+
+def graficar_series_vectores(difusion, vector_logistico, x_conf):
+    plt.figure(figsize=(12, 8))
+
+    # 1. Vector de difusión
+    plt.subplot(3, 1, 1)
+    plt.plot(difusion[:PUNTOS_EVAL])
+    plt.ylabel("Difusión")
+    plt.title("Vector de difusión")
+    plt.grid(alpha=0.3)
+
+    # 2. Vector logístico
+    plt.subplot(3, 1, 2)
+    plt.plot(vector_logistico[:PUNTOS_EVAL])
+    plt.ylabel("Logístico")
+    plt.title("Vector logístico")
+    plt.grid(alpha=0.3)
+
+    # 3. Serie x de Rössler
+    plt.subplot(3, 1, 3)
+    plt.plot(x_conf[:PUNTOS_EVAL])
+    plt.xlabel("Índice")
+    plt.ylabel("x (Rössler)")
+    plt.title("Serie x de Rössler (confusión)")
+    plt.grid(alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(RUTA_SERIES_VECTORES)
+    print(f"[GRAFICA] Series difusión/logístico/Rössler guardadas en {RUTA_SERIES_VECTORES}")
+
+def graficar_vector_cifrado(vector_cifrado):
+    """
+    Grafica el vector cifrado como señal 1D
+    """
+    plt.figure(figsize=(10, 4))
+    plt.plot(vector_cifrado[:PUNTOS_EVAL])
+    plt.xlabel("Índice")
+    plt.ylabel("Valor")
+    plt.title("Vector cifrado (1D)")
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(RUTA_VECTOR_CIFRADO_SERIE)
+    print(f"[GRAFICA] Vector cifrado 1D guardado en {RUTA_VECTOR_CIFRADO_SERIE}")
 
 def graficar_dispersion(imagen, vector_cifrado):
     """
@@ -407,12 +455,14 @@ def main():
     inicio_programa = time.perf_counter()
     # 1. Cargar la imagen
     imagen, vector_inf, ancho, alto, nmax = cargar_imagen()
+    # Mostrar medidas de la imagen
+    print(f"[CARGA] Medidas de la imagen: Ancho={ancho}, Alto={alto}, Canales=3, Total píxeles={nmax//3}, Total valores={nmax}")
 
     # 2. Aplicar difusión
     difusion, vector_logistico, tiempo_difusion = aplicar_difusion(vector_inf, nmax)
 
     # 3. Aplicar confusión
-    vector_cifrado, x, y_sinc, z, t, tiempo_rossler, tiempo_confusion = aplicar_confusion(difusion, vector_logistico, nmax, ROSSLER_PARAMS)
+    vector_cifrado, x, x_key, y_sinc, z, t, tiempo_rossler, tiempo_confusion = aplicar_confusion(difusion, vector_logistico, nmax, ROSSLER_PARAMS)
 
     # 4. Preparar datos para MQTT
     data = preparar_payload(vector_cifrado, x, y_sinc, z, t, ancho, alto, nmax)
@@ -461,6 +511,8 @@ def main():
     graficas(imagen, difusion, vector_cifrado, ancho, alto)
     graficar_dispersion(imagen, vector_cifrado)
     graficar_hamming(imagen, vector_cifrado, ancho, alto)
+    graficar_series_vectores(difusion, vector_logistico, x_key)
+    graficar_vector_cifrado(vector_cifrado)
 
     print("[PROGRAMA] Proceso de cifrado completado")
 
