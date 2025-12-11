@@ -30,7 +30,7 @@ ROSSLER_PARAMS = {
     "c": 5.7,
 }
 
-TIME_SINC = 2500 # Tiempo de sincronización experimental
+TIEMPO_SINC = 2500 # Tiempo de sincronización experimental
 H = 0.01 # Paso de integración
 Y0 = [0.1, 0.1, 0.1] # Condiciones iniciales del sistema de Rössler
 # Parámetros para Logistic Map
@@ -207,7 +207,7 @@ def aplicar_confusion(difusion, vector_logistico, nmax, rosslerParams):
     t_inicio_confusion = time.perf_counter()
 
     # 1. Se calculan las iteraciones totales (sincronización + cifrado)
-    iteraciones = TIME_SINC + nmax
+    iteraciones = TIEMPO_SINC + nmax
     print(f"[CONFUSION] Iteraciones totales: {iteraciones}")
 
     # 2. Resolver el sistema de Rössler
@@ -229,7 +229,7 @@ def aplicar_confusion(difusion, vector_logistico, nmax, rosslerParams):
 
     # 3. Extraer las trayectorias del sistema de Rössler
     x_maestro = solucion.y[0]
-    x_sinc = solucion.y[0][TIME_SINC:] # Para la confusion
+    x_sinc = solucion.y[0][TIEMPO_SINC:] # Para la confusion
     y_maestro = solucion.y[1] # Para sincronizacion
     z_maestro = solucion.y[2]
     t = solucion.t
@@ -279,11 +279,11 @@ def preparar_payload(vector_cifrado, x_maestro, y_maestro, z_maestro, t, ancho, 
         'x_maestro': x_maestro.tolist(),
         "y_maestro": y_maestro.tolist(),
         "z_maestro": z_maestro.tolist(),
-        "times": t.tolist(),
+        "t_maestro": t.tolist(),
         "ancho": ancho,
         "alto": alto,
         "nmax": nmax,
-        "time_sinc": TIME_SINC,
+        "tiempo_sinc": TIEMPO_SINC,
     }
     return data
 

@@ -29,7 +29,7 @@ ROSSLER_PARAMS = {
     "b": 0.2,
     "c": 5.7,
 }
-TIME_SINC = 2500 # Tiempo de sincronización experimental
+TIEMPO_SINC = 2500 # Tiempo de sincronización experimental
 H = 0.01 # Paso de integración
 Y0 = [0.1, 0.1, 0.1] # Condiciones iniciales del sistema de Rössler
 KEYSTREAM = 20000
@@ -207,7 +207,7 @@ def aplicar_confusion(difusion, vector_logistico, nmax, rosslerParams):
     t_inicio_confusion = time.perf_counter()
 
     # 1. Se calculan las iteraciones totales (sincronización + cifrado)
-    iteraciones = TIME_SINC + KEYSTREAM
+    iteraciones = TIEMPO_SINC + KEYSTREAM
     print(f"[CONFUSION] Iteraciones totales: {iteraciones}")
 
     # 2. Resolver el sistema de Rössler
@@ -229,7 +229,7 @@ def aplicar_confusion(difusion, vector_logistico, nmax, rosslerParams):
 
     # 3. Extraer las trayectorias del sistema de Rössler
     x = solucion.y[0] # Señal x completa
-    x_key = solucion.y[0][TIME_SINC:] # Para la confusion
+    x_key = solucion.y[0][TIEMPO_SINC:] # Para la confusion
     y = solucion.y[1] # Para sincronizacion
     z = solucion.y[2]
     t = solucion.t
@@ -266,7 +266,7 @@ def cargar_imagen():
     print("[CARGA] Imagen cargada y vectorizada correctamente")
     return imagen, vector_inf, ancho, alto, nmax
 
-def preparar_payload(vector_cifrado, x_master, y_sinc, z_master, t, ancho, alto, nmax):
+def preparar_payload(vector_cifrado, x_master, y_maestro, z_master, t_maestro, ancho, alto, nmax):
     """
     Se prepara el diccionario de datos para envíar mediante MQTT
 
@@ -279,13 +279,13 @@ def preparar_payload(vector_cifrado, x_master, y_sinc, z_master, t, ancho, alto,
     data = {
         "vector_cifrado": vector_cifrado.tolist(),
         "x_maestro": x_master.tolist(),
-        "y_maestro": y_sinc.tolist(),
+        "y_maestro": y_maestro.tolist(),
         "z_maestro": z_master.tolist(),
-        "times": t.tolist(),
+        "t_maestro": t_maestro.tolist(),
         "ancho": ancho,
         "alto": alto,
         "nmax": nmax,
-        "time_sinc": TIME_SINC,
+        "tiempo_sinc": TIEMPO_SINC,
         "KEYSTREAM": KEYSTREAM
     }
     return data
@@ -367,7 +367,7 @@ def graficar_vector_cifrado(vector_cifrado):
     plt.grid(alpha=0.3)
     plt.tight_layout()
     plt.savefig(RUTA_VECTOR_CIFRADO_SERIE)
-    print(f"[GRAFICA] Vector cifrado 1D guardado en {RUTA_VECTOR_CIFRADO_SERIE}")
+    print(f"[GRAFICA] Vector cifrado guardado en {RUTA_VECTOR_CIFRADO_SERIE}")
 
 def graficar_dispersion(imagen, vector_cifrado):
     """
