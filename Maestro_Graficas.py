@@ -9,6 +9,7 @@ import pandas as pd
 import paho.mqtt.client as mqtt
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
+from matplotlib import cycler
 from PIL import Image
 
 # ========== CONFIGURACION MQTT ==========
@@ -17,8 +18,8 @@ PORT = 8883
 QOS = 1
 USERNAME = "usuario1"
 PASSWORD = "qwerty123"
-TOPIC_KEYS = "chaoskeystream/keys"
-TOPIC_DATA = "chaoskeystream/data"
+TOPIC_KEYS = "graficas/keys"
+TOPIC_DATA = "graficas/data"
 CA_CERT_PATH = "/etc/mosquitto/ca_certificates/ca.crt"
 # ========================================
 
@@ -33,7 +34,7 @@ TIEMPO_SINC = 6000 # Tiempo de sincronización experimental
 H = 0.01 # Paso de integración
 Y0 = [0.1, 0.1, 0.1] # Condiciones iniciales del sistema de Rössler
 KEYSTREAM = 30000
-IMG_SCALE = 0.01
+IMG_SCALE = 0.02
 # Parámetros para Logistic Map
 LOGISTIC_PARAMS = {
     "aLog": 3.99,
@@ -41,7 +42,8 @@ LOGISTIC_PARAMS = {
 }
 
 # ========== RUTAS Y ARCHIVOS ==========
-CARPETA_CIFRADO = Path("CifradoTLS_KEYSTREAM")
+CARPETA_CIFRADO = Path("Graficas_Maestro")
+CARPETA_CIFRADO.mkdir(parents=True, exist_ok=True)
 IMAGEN_ENTRADA = Path("Prueba2.jpg")
 RUTA_IMAGEN_CIFRADA = CARPETA_CIFRADO / "ImagenCifrada_TLS.png"
 RUTA_TIMINGS = CARPETA_CIFRADO / "tiempos_procesos.csv"
@@ -51,6 +53,94 @@ RUTA_VECTOR_CIFRADO_SERIE = CARPETA_CIFRADO / "vector_cifrado.png"
 
 # ========== CONSTANTES AUXILIARES ==========
 PUNTOS_EVAL = 15000  # Número de puntos a evaluar en las gráficas
+
+
+def set_mpl_style_journal():
+    # Paleta Okabe–Ito (colorblind-friendly) + tono sobrio
+    # Fuente: ampliamente usada en artículos por su accesibilidad y contraste.
+    colorblind_palette = [
+        "#000000",
+        "#009E73",  # bluish green
+        "#F0E442",  # yellow
+        "#0072B2",  # blue
+        "#D55E00",  # vermillion        
+        "#CC79A7",  # reddish purple
+        "#56B4E9",  # sky blue
+        "#E69F00",  # orange
+        
+    ]
+
+    plt.rcParams.update({
+        # ---------------------------
+        # Tipografía
+        # ---------------------------
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],  # fallback seguro
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "axes.titlesize": 10,
+        "legend.fontsize": 8,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+
+        # ---------------------------
+        # Ejes y ticks (look “clean”)
+        # ---------------------------
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "axes.linewidth": 0.8,
+
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+        "xtick.major.size": 3.0,
+        "ytick.major.size": 3.0,
+        "xtick.minor.size": 1.6,
+        "ytick.minor.size": 1.6,
+        "xtick.major.width": 0.8,
+        "ytick.major.width": 0.8,
+
+        # ---------------------------
+        # Líneas y ciclo de colores
+        # ---------------------------
+        "lines.linewidth": 0.8,
+        "lines.markersize": 4.0,
+        "axes.prop_cycle": cycler(color=colorblind_palette),
+
+        # Colormap por defecto (para imshow, scatter con cmap, etc.)
+        "image.cmap": "viridis",
+
+        # ---------------------------
+        # Grid: apagado por defecto, pero bonito si lo activas
+        # ---------------------------
+        "axes.grid": False,
+        "grid.color": "0.6",
+        "grid.linestyle": "--",
+        "grid.linewidth": 0.5,
+        "grid.alpha": 0.25,
+
+        # ---------------------------
+        # Exportación / calidad
+        # ---------------------------
+        "figure.dpi": 300,
+        "savefig.dpi": 300,
+        "savefig.format": "pdf",      # preferente
+        "savefig.bbox": "tight",
+        "savefig.pad_inches": 0.02,
+
+        # Tipos de fuente embebidos (mejor compatibilidad en PDF/EPS)
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+
+        # ---------------------------
+        # Leyenda
+        # ---------------------------
+        "legend.frameon": False,
+    })
+
+
+
+
+
 
 # ========== SISTEMA DE RÖSSLER ==========
 def rossler_maestro(t, state, a, b, c):
@@ -291,105 +381,338 @@ def preparar_payload(vector_cifrado, x_master, y_maestro, z_master, t_maestro, a
     }
     return data
 
-def graficas(imagen, difusion, vector_cifrado, ancho, alto):
+def graficas(imagen, difusion, vector_cifrado, ancho, alto, ruta_salida=RUTA_IMAGEN_CIFRADA, orden="F"):
     """
-    Genera y guarda la figura comparativa:
-    original, después de difusión y después de confusión.
+    Figura comparativa (3 paneles):
+      (a) Original
+      (b) Después de difusión (pseudoimagen)
+      (c) Después de confusión (pseudoimagen normalizada)
+
+    - 'orden' debe coincidir con el usado al vectorizar (flatten).
+      Con tu cargar_imagen() actual, lo correcto es orden="C".
+    - Guarda salida principal en PDF y un PNG de preview si ruta_salida termina en .png/.jpg/...
     """
-    plt.figure(figsize=(15, 5))
+    # --- Normalizar entradas ---
+    difusion = np.asarray(difusion).ravel()
+    vector_cifrado = np.asarray(vector_cifrado).ravel()
 
-    # Original
-    plt.subplot(1, 3, 1)
-    plt.imshow(imagen)
-    plt.title("Original")
-    plt.axis("off")
+    n_esperado = int(alto) * int(ancho) * 3
+    if difusion.size != n_esperado:
+        raise ValueError(f"[GRAFICAS] 'difusion' tiene {difusion.size} elementos, pero se esperaban {n_esperado} (alto*ancho*3).")
+    if vector_cifrado.size != n_esperado:
+        raise ValueError(f"[GRAFICAS] 'vector_cifrado' tiene {vector_cifrado.size} elementos, pero se esperaban {n_esperado} (alto*ancho*3).")
 
-    # Después de difusión
-    difusion_img = np.clip(difusion, 0.0, 1.0)
-    difusion_img = np.round(difusion_img*255.0).astype(np.uint8).reshape((alto, ancho, 3), order = 'F')
-    plt.subplot(1, 3, 2)
-    plt.imshow(difusion_img)
-    plt.title("Después de Difusión")
-    plt.axis("off")
+    # --- (b) Pseudoimagen de difusión ---
+    # Difusión se asume en [0,1], pero por seguridad recortamos
+    dif_img = np.clip(difusion, 0.0, 1.0)
+    dif_img = np.rint(dif_img * 255.0).astype(np.uint8).reshape((alto, ancho, 3), order=orden)
 
-    # Después de confusión (pseudo-imagen)
-    cifrado_norm = (vector_cifrado - np.min(vector_cifrado)) / (
-        np.max(vector_cifrado) - np.min(vector_cifrado) + 1e-12
+    # --- (c) Pseudoimagen cifrada (confusión) ---
+    # Para visualizar, normalizamos min-max (evita reventar el rango en pantalla)
+    vmin = float(np.min(vector_cifrado))
+    vmax = float(np.max(vector_cifrado))
+    if np.isclose(vmax, vmin):
+        cif_norm = np.zeros_like(vector_cifrado, dtype=np.float64)
+    else:
+        cif_norm = (vector_cifrado - vmin) / (vmax - vmin)
+
+    cif_img = np.clip(cif_norm, 0.0, 1.0)
+    cif_img = np.rint(cif_img * 255.0).astype(np.uint8).reshape((alto, ancho, 3), order=orden)
+
+    # --- Figura estilo “paper” ---
+    fig, axes = plt.subplots(
+        nrows=1, ncols=3,
+        figsize=(7.2, 2.6),
+        constrained_layout=True
     )
-    cifrado_img = np.clip(cifrado_norm, 0.0, 1.0)
-    cifrado_img = np.round(cifrado_img*255.0).astype(np.uint8).reshape((alto, ancho, 3), order = 'F')
-    plt.subplot(1, 3, 3)
-    plt.imshow(cifrado_img)
-    plt.title("Después de Confusión")
-    plt.axis("off")
 
-    plt.tight_layout()
-    plt.savefig(RUTA_IMAGEN_CIFRADA)
-    print(f"Resultados del proceso completo guardados en {RUTA_IMAGEN_CIFRADA}")
+    paneles = [
+        ("(a)", "Original", np.asarray(imagen), None),
+        ("(b)", "Después de Difusión", dif_img, None),
+        ("(c)", "Después de Confusión", cif_img, None),
+    ]
 
-def graficar_series_vectores(difusion, vector_logistico, x_conf):
-    plt.figure(figsize=(12, 8))
+    for ax, (tag, titulo, img, cmap) in zip(axes, paneles):
+        ax.imshow(img, interpolation="nearest", cmap=cmap)
+        ax.set_title(titulo, pad=6)
+        ax.axis("off")
+        ax.text(
+            0.01, 0.99, tag,
+            transform=ax.transAxes,
+            va="top", ha="left",
+            fontsize=10
+        )
 
-    # 1. Vector de difusión
-    plt.subplot(3, 1, 1)
-    plt.plot(difusion[:PUNTOS_EVAL])
-    plt.ylabel("Difusión")
-    plt.title("Vector de difusión")
-    plt.grid(alpha=0.3)
+    # --- Guardado: PDF principal + preview opcional ---
+    ruta_salida = Path(ruta_salida)
+    suffix = ruta_salida.suffix.lower()
 
-    # 2. Vector logístico
-    plt.subplot(3, 1, 2)
-    plt.plot(vector_logistico[:PUNTOS_EVAL])
-    plt.ylabel("Logístico")
-    plt.title("Vector logístico")
-    plt.grid(alpha=0.3)
+    # PDF “de revista”
+    ruta_pdf = ruta_salida if suffix == ".pdf" else ruta_salida.with_suffix(".pdf")
+    fig.savefig(ruta_pdf)
 
-    # 3. Serie x de Rössler
-    plt.subplot(3, 1, 3)
-    plt.plot(x_conf[:PUNTOS_EVAL])
-    plt.xlabel("Índice")
-    plt.ylabel("x (Rössler)")
-    plt.title("Serie x de Rössler (confusión)")
-    plt.grid(alpha=0.3)
+    # Preview raster (si tu ruta era png/jpg/etc.)
+    if suffix in [".png", ".jpg", ".jpeg", ".tif", ".tiff"]:
+        fig.savefig(ruta_salida)
 
-    plt.tight_layout()
-    plt.savefig(RUTA_SERIES_VECTORES)
-    print(f"[GRAFICA] Series difusión/logístico/Rössler guardadas en {RUTA_SERIES_VECTORES}")
+    plt.close(fig)
 
-def graficar_vector_cifrado(vector_cifrado):
+    print(f"[GRAFICA] Comparativa guardada (principal): {ruta_pdf}")
+    if suffix in [".png", ".jpg", ".jpeg", ".tif", ".tiff"]:
+        print(f"[GRAFICA] Preview guardado: {ruta_salida}")
+
+
+def graficar_series_vectores(
+    difusion,
+    vector_logistico,
+    x_conf,
+    puntos_eval=PUNTOS_EVAL,
+    ruta_salida=RUTA_SERIES_VECTORES,
+    show_grid=False
+):
     """
-    Grafica el vector cifrado como señal 1D
-    """
-    plt.figure(figsize=(10, 4))
-    plt.plot(vector_cifrado[:PUNTOS_EVAL])
-    plt.xlabel("Índice")
-    plt.ylabel("Valor")
-    plt.title("Vector cifrado (1D)")
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(RUTA_VECTOR_CIFRADO_SERIE)
-    print(f"[GRAFICA] Vector cifrado guardado en {RUTA_VECTOR_CIFRADO_SERIE}")
+    Grafica (en 3 subplots) las series usadas en el cifrado:
+      1) Vector de difusión
+      2) Vector logístico
+      3) Serie x del Rössler usada para confusión
 
-def graficar_dispersion(imagen, vector_cifrado):
+    - Respeta el estilo global (rcParams).
+    - Guarda salida principal en PDF (vectorial) y un PNG de preview si aplica.
+    - Recorta automáticamente para evitar errores si las series son más cortas que puntos_eval.
+
+    Parámetros:
+        difusion, vector_logistico, x_conf: array-like
+        puntos_eval (int): máximo de puntos a mostrar
+        ruta_salida (Path o str): ruta base de guardado (puede terminar en .png)
+        show_grid (bool): si True, activa grid con el estilo global (tenue y discontinuo).
     """
-    Genera y guarda el diagrama de dispersión entre la imagen original y la cifrada
-    Ambas están normalizadas
+
+    # ---- Normalización básica de entradas (sin alterar tus datos originales) ----
+    difusion = np.asarray(difusion).ravel()
+    vector_logistico = np.asarray(vector_logistico).ravel()
+    x_conf = np.asarray(x_conf).ravel()
+
+    # Para compartir eje X sin broncas, usamos el mismo N para las 3 series
+    n = min(int(puntos_eval), difusion.size, vector_logistico.size, x_conf.size)
+    if n <= 0:
+        raise ValueError("No hay datos suficientes para graficar (n <= 0).")
+
+    # ---- Figura tipo “paper”: compacta, limpia, consistente ----
+    fig, axes = plt.subplots(
+        nrows=3,
+        ncols=1,
+        sharex=True,
+        figsize=(6.5, 6.0),          # tamaño práctico para reporte/paper
+        constrained_layout=True
+    )
+
+    series = [
+        (difusion[:n], "Difusión", "(a)"),
+        (vector_logistico[:n], "Logístico", "(b)"),
+        (x_conf[:n], "x (Rössler)", "(c)"),
+    ]
+
+    for ax, (y, ylabel, panel) in zip(axes, series):
+        ax.plot(y)  # usa el ciclo de colores global (colorblind-friendly)
+        ax.set_ylabel(ylabel)
+
+        # Etiqueta tipo “panel” (a), (b), (c) en esquina superior izquierda
+        ax.text(
+            0.01, 0.92, panel,
+            transform=ax.transAxes,
+            fontsize=10,
+            va="top",
+            ha="left"
+        )
+
+        # Grid: apagado por defecto, si se activa usa tu estilo global (tenue/discontinuo)
+        ax.grid(show_grid)
+
+    axes[-1].set_xlabel("Índice (muestra)")
+
+    # Si quieres un título general (sobrio), puedes dejarlo:
+    # fig.suptitle("Series utilizadas para difusión y confusión", y=1.02)
+
+    # ---- Guardado profesional: PDF principal + PNG opcional ----
+    ruta_salida = Path(ruta_salida)
+
+    # PDF (vectorial) como salida “de revista”
+    ruta_pdf = ruta_salida.with_suffix(".pdf")
+    fig.savefig(ruta_pdf)
+
+    # PNG de preview (solo si tu ruta original era png/jpg/etc.)
+    # Esto te sirve para ver rápido resultados sin abrir el PDF.
+    if ruta_salida.suffix.lower() in [".png", ".jpg", ".jpeg", ".tif", ".tiff"]:
+        fig.savefig(ruta_salida)
+
+    plt.close(fig)
+
+    print(f"[GRAFICA] Series guardadas (principal): {ruta_pdf}")
+    if ruta_salida.suffix.lower() in [".png", ".jpg", ".jpeg", ".tif", ".tiff"]:
+        print(f"[GRAFICA] Preview guardado: {ruta_salida}")
+
+def graficar_vector_cifrado(vector_cifrado, show_grid=False):
     """
-    img_original = np.array(imagen).flatten().astype(np.float32)/255.0
+    Grafica el vector cifrado como señal 1D con estilo tipo revista (usa rcParams globales).
     
-    cifrado_normalizado = (vector_cifrado - np.min(vector_cifrado)) / (
-        np.max(vector_cifrado) - np.min(vector_cifrado) + 1e-12
-    )
-    plt.figure(figsize=(6, 6))
-    plt.scatter(img_original, cifrado_normalizado, s=1, alpha=0.3)
-    plt.xlabel("Original (normalizada)")
-    plt.ylabel("Cifrada (normalizada)")
-    plt.title("Diagrama de dispersión: imagen original vs cifrada")
-    plt.tight_layout()
-    plt.savefig(str(RUTA_DISPERSION))
-    print(f"[GRAFICA] Dispersión guardada en {RUTA_DISPERSION}")
+    - Grid apagado por defecto (show_grid=False).
+    - Guarda salida principal en PDF (vectorial) y preview en PNG si tu ruta lo indica.
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from pathlib import Path
 
-def graficar_hamming(imagen, vector_cifrado, ancho, alto):
+    # Asegurar vector 1D
+    y = np.asarray(vector_cifrado).ravel()
+
+    # Longitud segura para graficar
+    n = min(int(PUNTOS_EVAL), y.size)
+    if n <= 0:
+        raise ValueError("No hay datos suficientes en vector_cifrado para graficar.")
+
+    # Figura compacta tipo paper
+    fig, ax = plt.subplots(
+        figsize=(6.5, 2.6),
+        constrained_layout=True
+    )
+
+    # Plot: usa ciclo de colores global + linewidth global
+    ax.plot(y[:n])
+
+    ax.set_xlabel("Muestras")
+    ax.set_ylabel("Valor")
+    ax.set_title("Vector cifrado")
+
+    # Grid: solo si lo pides; si se activa respeta tu estilo global (tenue/discontinuo)
+    ax.grid(show_grid)
+
+    # Guardado: PDF principal + PNG preview
+    ruta_salida = Path(RUTA_VECTOR_CIFRADO_SERIE)
+
+    ruta_pdf = ruta_salida.with_suffix(".pdf")
+    fig.savefig(ruta_pdf)
+
+    # Si tu ruta tiene extensión raster, guardamos también el preview
+    if ruta_salida.suffix.lower() in [".png", ".jpg", ".jpeg", ".tif", ".tiff"]:
+        fig.savefig(ruta_salida)
+
+    plt.close(fig)
+
+    print(f"[GRAFICA] Vector cifrado guardado (principal): {ruta_pdf}")
+    if ruta_salida.suffix.lower() in [".png", ".jpg", ".jpeg", ".tif", ".tiff"]:
+        print(f"[GRAFICA] Vector cifrado guardado (preview):   {ruta_salida}")
+
+def graficar_dispersion(imagen, vector_cifrado, method="auto", max_scatter_points=200_000, show_grid=False):
+    """
+    Diagrama de dispersión / densidad entre imagen original y 'pseudo-imagen' cifrada.
+    Ambas series se normalizan a [0, 1].
+
+    method:
+        - "auto": usa hist2d si hay muchos puntos; scatter si hay pocos
+        - "scatter": scatter (con rasterizado para PDF ligero)
+        - "hist2d": histograma 2D (recomendado para millones de puntos)
+
+    max_scatter_points:
+        Límite de puntos para scatter (si supera, auto usa hist2d o se submuestrea).
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from pathlib import Path
+    from matplotlib.colors import LogNorm
+
+    # --- Original normalizada a [0,1] ---
+    x = np.asarray(imagen, dtype=np.float32).ravel() / 255.0
+
+    # --- Cifrado normalizado a [0,1] ---
+    y_raw = np.asarray(vector_cifrado, dtype=np.float32).ravel()
+    y = (y_raw - np.min(y_raw)) / (np.max(y_raw) - np.min(y_raw) + 1e-12)
+
+    # Asegurar misma longitud
+    n = min(x.size, y.size)
+    if n <= 0:
+        raise ValueError("No hay datos suficientes para graficar dispersión.")
+    x = x[:n]
+    y = y[:n]
+
+    # Elegir método automáticamente
+    if method not in ("auto", "scatter", "hist2d"):
+        raise ValueError("method debe ser 'auto', 'scatter' o 'hist2d'.")
+
+    if method == "auto":
+        # Si hay demasiados puntos, densidad es más profesional + rápido
+        method_use = "hist2d" if n > max_scatter_points else "scatter"
+    else:
+        method_use = method
+
+    fig, ax = plt.subplots(figsize=(4.2, 4.2), constrained_layout=True)
+
+    if method_use == "scatter":
+        # Si sigue siendo grande, submuestreamos para no matar rendimiento
+        if n > max_scatter_points:
+            # Submuestreo determinista (uniforme) para reproducibilidad
+            idx = np.linspace(0, n - 1, max_scatter_points, dtype=int)
+            xs = x[idx]
+            ys = y[idx]
+        else:
+            xs, ys = x, y
+
+        ax.scatter(
+            xs, ys,
+            s=2, alpha=0.15,
+            linewidths=0,
+            rasterized=True  # clave: PDF liviano aunque sea scatter
+        )
+
+    else:
+        # Histograma 2D: muy recomendado para muchos puntos
+        bins = 200  # puedes subir a 300 si quieres más resolución
+        H, xedges, yedges = np.histogram2d(x, y, bins=bins, range=[[0, 1], [0, 1]])
+
+        # Log para que se vea estructura aunque haya zonas súper densas
+        # (vmin=1 evita log(0))
+        im = ax.imshow(
+            H.T,
+            origin="lower",
+            extent=[0, 1, 0, 1],
+            aspect="equal",
+            interpolation="nearest",
+            norm=LogNorm(vmin=1, vmax=max(1, H.max()))
+        )
+        cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
+        cbar.set_label("Conteo (escala log)")
+
+    # Línea de referencia y=x (no debe tomar el color del ciclo)
+    ax.plot([0, 1], [0, 1], linestyle="--", linewidth=0.8, color="0.35")
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect("equal", adjustable="box")
+
+    ax.set_xlabel("Original (normalizada)")
+    ax.set_ylabel("Cifrada (normalizada)")
+    ax.set_title("Relación píxel a píxel: original vs cifrada")
+
+    # Grid opcional (si se activa, respeta el estilo global)
+    ax.grid(show_grid)
+
+    # --- Guardado: PDF principal + PNG preview ---
+    ruta_salida = Path(RUTA_DISPERSION)
+    ruta_salida.parent.mkdir(parents=True, exist_ok=True)
+
+    ruta_pdf = ruta_salida.with_suffix(".pdf")
+    fig.savefig(ruta_pdf)
+
+    if ruta_salida.suffix.lower() in [".png", ".jpg", ".jpeg", ".tif", ".tiff"]:
+        fig.savefig(ruta_salida)
+
+    plt.close(fig)
+
+    print(f"[GRAFICA] Dispersión guardada (principal): {ruta_pdf}")
+    if ruta_salida.suffix.lower() in [".png", ".jpg", ".jpeg", ".tif", ".tiff"]:
+        print(f"[GRAFICA] Dispersión guardada (preview):   {ruta_salida}")
+
+
+def calcular_hamming(imagen, vector_cifrado, ancho, alto):
     """
     Se calcula la distancia Hamming entre la imagen original y la cifrada
     """
@@ -444,6 +767,7 @@ def registrar_tiempos(tiempo_difusion, tiempo_rossler, tiempo_confusion, tiempo_
     print(f"[TIEMPOS] Tiempos registrados en {RUTA_TIMINGS}")
 
 def main():
+    set_mpl_style_journal()
     inicio_programa = time.perf_counter()
     # 1. Cargar la imagen
     imagen, vector_inf, ancho, alto, nmax = cargar_imagen()
@@ -502,7 +826,7 @@ def main():
     # 6. Generar gráficas
     graficas(imagen, difusion, vector_cifrado, ancho, alto)
     graficar_dispersion(imagen, vector_cifrado)
-    graficar_hamming(imagen, vector_cifrado, ancho, alto)
+    calcular_hamming(imagen, vector_cifrado, ancho, alto)
     graficar_series_vectores(difusion, vector_logistico, x_key)
     graficar_vector_cifrado(vector_cifrado)
 
