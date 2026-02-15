@@ -15,6 +15,7 @@ from PIL import Image
 BROKER = "raspberrypiJED.local"
 PORT = 8883
 QOS = 1
+
 USERNAME = "usuario1"
 PASSWORD = "qwerty123"
 TOPIC_KEYS = "chaoskeystream/keys"
@@ -291,41 +292,53 @@ def preparar_payload(vector_cifrado, x_master, y_maestro, z_master, t_maestro, a
     }
     return data
 
-def graficas(imagen, difusion, vector_cifrado, ancho, alto):
+def graficas(difusion_x, vector_cifrado, ancho, alto):
     """
-    Genera y guarda la figura comparativa:
-    original, después de difusión y después de confusión.
+    Genera y guarda por separado las imágenes después de difusión y después de confusión.
+    
+    Parámetros:
+    ----------
+    difusion_x : np.ndarray
+        Vector de difusión SIN escalar (antes de aplicar IMG_SCALE)
+    vector_cifrado : np.ndarray
+        Vector cifrado después de aplicar confusión
+    ancho : int
+        Ancho de la imagen
+    alto : int
+        Alto de la imagen
     """
-    plt.figure(figsize=(15, 5))
-
-    # Original
-    plt.subplot(1, 3, 1)
-    plt.imshow(imagen)
-    plt.title("Original")
-    plt.axis("off")
-
-    # Después de difusión
-    difusion_img = np.clip(difusion, 0.0, 1.0)
-    difusion_img = np.round(difusion_img*255.0).astype(np.uint8).reshape((alto, ancho, 3), order = 'F')
-    plt.subplot(1, 3, 2)
+    # ===== IMAGEN DESPUÉS DE DIFUSIÓN =====
+    plt.figure(figsize=(6, 6))
+    difusion_img = np.clip(difusion_x, 0.0, 1.0)
+    difusion_img = np.round(difusion_img * 255.0).astype(np.uint8).reshape((alto, ancho, 3), order='F')
     plt.imshow(difusion_img)
-    plt.title("Después de Difusión")
+    plt.title("Difusión")
     plt.axis("off")
-
-    # Después de confusión (pseudo-imagen)
+    plt.tight_layout()
+    
+    # Guardar imagen de difusión
+    ruta_difusion = CARPETA_CIFRADO / "Imagen_Difusion.png"
+    plt.savefig(ruta_difusion)
+    plt.close()
+    print(f"[GRAFICA] Imagen de difusión guardada en {ruta_difusion}")
+    
+    # ===== IMAGEN DESPUÉS DE CONFUSIÓN =====
+    plt.figure(figsize=(6, 6))
     cifrado_norm = (vector_cifrado - np.min(vector_cifrado)) / (
         np.max(vector_cifrado) - np.min(vector_cifrado) + 1e-12
     )
     cifrado_img = np.clip(cifrado_norm, 0.0, 1.0)
-    cifrado_img = np.round(cifrado_img*255.0).astype(np.uint8).reshape((alto, ancho, 3), order = 'F')
-    plt.subplot(1, 3, 3)
+    cifrado_img = np.round(cifrado_img * 255.0).astype(np.uint8).reshape((alto, ancho, 3), order='F')
     plt.imshow(cifrado_img)
-    plt.title("Después de Confusión")
+    plt.title("Confusión")
     plt.axis("off")
-
     plt.tight_layout()
-    plt.savefig(RUTA_IMAGEN_CIFRADA)
-    print(f"Resultados del proceso completo guardados en {RUTA_IMAGEN_CIFRADA}")
+    
+    # Guardar imagen de confusión
+    ruta_confusion = CARPETA_CIFRADO / "Imagen_Confusion.png"
+    plt.savefig(ruta_confusion)
+    plt.close()
+    print(f"[GRAFICA] Imagen de confusión guardada en {ruta_confusion}")
 
 def graficar_series_vectores(difusion, vector_logistico, x_conf):
     plt.figure(figsize=(12, 8))
@@ -500,10 +513,10 @@ def main():
     )
 
     # 6. Generar gráficas
-    graficas(imagen, difusion, vector_cifrado, ancho, alto)
+    graficas(difusion_x, vector_cifrado, ancho, alto)
     graficar_dispersion(imagen, vector_cifrado)
     graficar_hamming(imagen, vector_cifrado, ancho, alto)
-    graficar_series_vectores(difusion, vector_logistico, x_key)
+    graficar_series_vectores(difusion_x, vector_logistico, x_key)
     graficar_vector_cifrado(vector_cifrado)
 
     print("[PROGRAMA] Proceso de cifrado completado")
