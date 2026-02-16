@@ -1,14 +1,11 @@
 \documentclass[12pt,a4paper]{article}
 
-% Paquetes esenciales
 \usepackage[utf8]{inputenc}
 \usepackage[spanish]{babel}
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
-
 \addto\captionsspanish{\renewcommand{\tablename}{Tabla}}
 
-% Geometría de la página
 \usepackage[left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm]{geometry}
 
 % Matemáticas
@@ -36,7 +33,7 @@
 \usepackage{hyperref}
 \hypersetup{
 	colorlinks=true,
-	linkcolor=blue,
+	linkcolor=black,
 	filecolor=magenta,      
 	urlcolor=cyan,
 	citecolor=blue,
@@ -91,6 +88,7 @@
 % Información del documento
 \title{\textbf{Bitácora del Proceso de Cifrado de Imágenes}\\
 	\large{Código: Maestro}}
+	\date{}
 
 \begin{document}
 	
@@ -127,7 +125,7 @@
 		\item Total de valores: 187,500 ($250 \times 250 \times 3$)
 	\end{itemize}
 	
-	\section{INICIALIZACIÓN Y CONFIGURACIÓN DE PARÁMETROS}
+	\section{Inicialización y configuración de parámetros}
 	
 	\subsection{Parámetros del Sistema}
 	
@@ -136,9 +134,9 @@
 	\subsubsection{Parámetros del Oscilador de Rössler}
 	
 	\begin{lstlisting}
-	a = 0.2
-	b = 0.2
-	c = 5.7
+a = 0.2
+b = 0.2
+c = 5.7
 	\end{lstlisting}
 	
 	Estos parámetros controlan el comportamiento caótico del sistema de Rössler, garantizando que las trayectorias generadas sean impredecibles y sensibles a las condiciones iniciales.
@@ -146,34 +144,34 @@
 	\subsubsection{Condiciones Iniciales de Rössler}
 	
 	\begin{lstlisting}
-	Y0 = [0.1, 0.1, 0.1]  # [x0, y0, z0]
+Y0 = [0.1, 0.1, 0.1]  # [x0, y0, z0]
 	\end{lstlisting}
 	
 	\subsubsection{Parámetros del Mapa Logístico}
 	
 	\begin{lstlisting}
-	aLog = 3.99  # Parametro de control (debe estar en rango caotico: 3.57 < a <= 4)
-	x0_log = 0.4  # Condicion inicial (0 < x0 < 1)
+aLog = 3.99  # Parametro de control (debe estar en rango caotico: 3.57 < a <= 4)
+x0_log = 0.4  # Condicion inicial (0 < x0 < 1)
 	\end{lstlisting}
 	
 	\subsubsection{Parámetros de Integración y Sincronización}
 	
 	\begin{lstlisting}
-	TIEMPO_SINC = 6000   # Iteraciones de sincronizacion
-	KEYSTREAM = 30000     # Iteraciones para generacion de clave
-	H = 0.01              # Paso de integracion
-	IMG_SCALE = 0.01      # Factor de escala para difusion
+TIEMPO_SINC = 6000   # Iteraciones de sincronizacion
+KEYSTREAM = 30000     # Iteraciones para generacion de clave
+H = 0.01              # Paso de integracion
+IMG_SCALE = 0.01      # Factor de escala para difusion
 	\end{lstlisting}
 	
 	\subsubsection{Configuración MQTT con TLS}
 	
 	\begin{lstlisting}
-	BROKER = "raspberrypiJED.local"
-	PORT = 8883           # Puerto seguro MQTT sobre TLS
-	QOS = 1               # Calidad de servicio
-	USERNAME = "usuario1"
-	PASSWORD = "qwerty123"
-	CA_CERT_PATH = "/etc/mosquitto/ca_certificates/ca.crt"
+BROKER = "raspberrypiJED.local"
+PORT = 8883           # Puerto seguro MQTT sobre TLS
+QOS = 1               # Calidad de servicio
+USERNAME = "usuario1"
+PASSWORD = "qwerty123"
+CA_CERT_PATH = "/etc/mosquitto/ca_certificates/ca.crt"
 	\end{lstlisting}
 	
 	\section{Carga y vectorización de la imagen}
@@ -311,22 +309,22 @@
 	
 	\subsubsection{Primera Pasada: Lectura Aleatoria}
 	\begin{lstlisting}
-	for i in range(nmax):
-		pos = vector_mezcla[i]
-		if vector_temp[pos] != 260.0:
-			difusion[contador] = vector_temp[pos]
-			contador += 1
-			vector_temp[pos] = 260.0  # Marcamos como usado
+for i in range(nmax):
+	pos = vector_mezcla[i]
+	if vector_temp[pos] != 260.0:
+		difusion[contador] = vector_temp[pos]
+		contador += 1
+		vector_temp[pos] = 260.0  # Marcamos como usado
 	\end{lstlisting}
 	
 	\subsubsection{Segunda Pasada: Lectura Secuencial de Restantes}
 	\begin{lstlisting}
-	for j in range(nmax):
-		if contador >= nmax:
-			break
-		if vector_temp[j] != 260.0:
-			difusion[contador] = vector_temp[j]
-			contador += 1
+for j in range(nmax):
+	if contador >= nmax:
+		break
+	if vector_temp[j] != 260.0:
+		difusion[contador] = vector_temp[j]
+		contador += 1
 	\end{lstlisting}
 	
 	\subsection{Ejemplo de Permutación}
@@ -465,7 +463,7 @@
 	
 	Solo después de este periodo se extrae la señal $x$ para el cifrado:
 	\begin{lstlisting}
-	x_key = x[TIEMPO_SINC:]  # x_key tiene longitud KEYSTREAM = 30000
+x_key = x[TIEMPO_SINC:]  # x_key tiene longitud KEYSTREAM = 30000
 	\end{lstlisting}
 	
 	\subsection{Redimensionamiento de la Señal de Confusión}
@@ -473,7 +471,7 @@
 	La señal \texttt{x\_key} (longitud 30000) se redimensiona para que coincida con $n_{\text{max}} = 187500$:
 	
 	\begin{lstlisting}
-	x_cif = np.resize(x_key, nmax)
+x_cif = np.resize(x_key, nmax)
 	\end{lstlisting}
 	
 	\subsubsection*{Comportamiento de \texttt{np.resize}:}
