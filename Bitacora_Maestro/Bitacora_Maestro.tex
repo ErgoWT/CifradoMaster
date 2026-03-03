@@ -5,31 +5,20 @@
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
 \addto\captionsspanish{\renewcommand{\tablename}{Tabla}}
-
 \usepackage[left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm]{geometry}
-
-% Matemáticas
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{amsfonts}
-
-% Tablas
 \usepackage{booktabs}
 \usepackage{longtable}
 \usepackage{array}
 \usepackage{multirow}
 \usepackage{tabularx}
-
-% Gráficos y colores
 \usepackage{graphicx}
 \usepackage{xcolor}
 \usepackage{colortbl}
-
-% Código fuente
 \usepackage{listings}
 \usepackage{courier}
-
-% Enlaces e hipervínculos
 \usepackage{hyperref}
 \hypersetup{
 	colorlinks=true,
@@ -42,14 +31,10 @@
 	pdfsubject={Cifrado Caótico de Imágenes},
 	pdfkeywords={Cifrado, Caos, Rössler, Mapa Logístico, MQTT, TLS}
 }
-
-% Otros paquetes útiles
 \usepackage{fancyhdr}
 \usepackage{titlesec}
 \usepackage{enumitem}
 \usepackage{float}
-
-% Configuración de listings para Python
 \lstset{
 	language=Python,
 	basicstyle=\ttfamily\small,
@@ -73,19 +58,13 @@
 	xleftmargin=2em,
 	framexleftmargin=1.5em
 }
-
-% Configuración de encabezados y pies de página
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\leftmark}
 \fancyhead[R]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
-
-% Profundidad del índice
 \setcounter{tocdepth}{3}
 \setcounter{secnumdepth}{3}
-
-% Información del documento
 \title{\textbf{Bitácora del Proceso de Cifrado de Imágenes}\\
 	\large{Código: Maestro}}
 	\date{}
