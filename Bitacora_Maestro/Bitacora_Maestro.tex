@@ -104,6 +104,15 @@
 		\item Total de valores: 187,500 ($250 \times 250 \times 3$)
 	\end{itemize}
 	
+	El histograma para la imagen de referencia fue:
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[width=0.7\textwidth]{histograma_original.png}
+		\caption{Histograma de la imagen de referencia}
+		\label{fig:hist_original}
+	\end{figure}
+	
 	\section{Inicialización y configuración de parámetros}
 	
 	\subsection{Parámetros del Sistema}
@@ -336,6 +345,15 @@ for j in range(nmax):
 		\label{fig:img_difusion}
 	\end{figure}
 	
+	También se hace un análisis para obtener el histograma de la imagen después de la difusión.
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[width=0.7\textwidth]{histograma_difusion.png}
+		\caption{Histograma de la etapa de difusión}
+		\label{fig:hist_difusion}
+	\end{figure}
+	
 	\begin{itemize}
 		\item Los píxeles se han reorganizado según la secuencia caótica
 		\item El orden espacial original se ha destruido completamente
@@ -504,6 +522,15 @@ x_cif = np.resize(x_key, nmax)
 		\includegraphics[width=0.5\textwidth]{Imagen_Confusion.png}
 		\caption{Resultado del proceso de Confusión}
 		\label{fig:img_confusion}
+	\end{figure}
+
+	El histograma obtenido de la imagen encriptada fue:
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[width=0.7\textwidth]{histograma_cifrado.png}
+		\caption{Histograma de la etapa de confusión}
+		\label{fig:hist_confusion}
 	\end{figure}
 	
 	\subsubsection*{Interpretación del Vector Cifrado:}
