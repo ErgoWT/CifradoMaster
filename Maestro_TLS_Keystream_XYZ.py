@@ -49,6 +49,9 @@ RUTA_TIMINGS = CARPETA_CIFRADO / "tiempos_procesos.csv"
 RUTA_DISPERSION = CARPETA_CIFRADO / "diagrama_dispersion.png"
 RUTA_SERIES_VECTORES = CARPETA_CIFRADO / "series_difusion_logistico_rossler.png"
 RUTA_VECTOR_CIFRADO_SERIE = CARPETA_CIFRADO / "vector_cifrado.png"
+RUTA_HISTOGRAMA_ORIGINAL = CARPETA_CIFRADO / "histograma_original.png"
+RUTA_HISTOGRAMA_DIFUSION = CARPETA_CIFRADO / "histograma_difusion.png"
+RUTA_HISTOGRAMA_CIFRADO = CARPETA_CIFRADO / "histograma_cifrado.png"
 
 # ========== CONSTANTES AUXILIARES ==========
 PUNTOS_EVAL = 15000  # Número de puntos a evaluar en las gráficas
@@ -402,6 +405,56 @@ def graficar_dispersion(imagen, vector_cifrado):
     plt.savefig(str(RUTA_DISPERSION))
     print(f"[GRAFICA] Dispersión guardada en {RUTA_DISPERSION}")
 
+def graficar_histogramas(imagen, difusion_x, vector_cifrado, ancho, alto):
+    # ===== 1. HISTOGRAMA DE LA IMAGEN ORIGINAL (ESCALA DE GRISES) =====
+    plt.figure(figsize=(8, 5))
+    img_gris_original = imagen.convert('L')  # Convertir a escala de grises con PIL
+    gris_original = np.array(img_gris_original).flatten()  # Valores 0-255
+    plt.hist(gris_original, bins=256, range=(0, 255), color='gray', alpha=0.7, edgecolor='black', linewidth=0.3)
+    plt.title("Histograma - Imagen Original")
+    plt.xlabel("Intensidad")
+    plt.ylabel("Frecuencia")
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(RUTA_HISTOGRAMA_ORIGINAL)
+    plt.close()
+    print(f"[GRAFICA] Histograma de imagen original guardado en {RUTA_HISTOGRAMA_ORIGINAL}")
+
+    # ===== 2. HISTOGRAMA DESPUÉS DE DIFUSIÓN (ESCALA DE GRISES) =====
+    plt.figure(figsize=(8, 5))
+    difusion_img = np.clip(difusion_x, 0.0, 1.0)
+    difusion_img = np.round(difusion_img * 255.0).astype(np.uint8).reshape((alto, ancho, 3), order='F')
+    img_difusion_pil = Image.fromarray(difusion_img, mode='RGB').convert('L')
+    gris_difusion = np.array(img_difusion_pil).flatten()
+    plt.hist(gris_difusion, bins=256, range=(0, 255), color='gray', alpha=0.7, edgecolor='black', linewidth=0.3)
+    plt.title("Histograma - Después de Difusión")
+    plt.xlabel("Intensidad")
+    plt.ylabel("Frecuencia")
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(RUTA_HISTOGRAMA_DIFUSION)
+    plt.close()
+    print(f"[GRAFICA] Histograma después de difusión guardado en {RUTA_HISTOGRAMA_DIFUSION}")
+
+    # ===== 3. HISTOGRAMA DESPUÉS DE CONFUSIÓN (ESCALA DE GRISES) =====
+    plt.figure(figsize=(8, 5))
+    cifrado_norm = (vector_cifrado - np.min(vector_cifrado)) / (
+        np.max(vector_cifrado) - np.min(vector_cifrado) + 1e-12
+    )
+    cifrado_img = np.clip(cifrado_norm, 0.0, 1.0)
+    cifrado_img = np.round(cifrado_img * 255.0).astype(np.uint8).reshape((alto, ancho, 3), order='F')
+    img_cifrado_pil = Image.fromarray(cifrado_img, mode='RGB').convert('L')
+    gris_cifrado = np.array(img_cifrado_pil).flatten()
+    plt.hist(gris_cifrado, bins=256, range=(0, 255), color='gray', alpha=0.7, edgecolor='black', linewidth=0.3)
+    plt.title("Histograma - Después de Confusión (Cifrado Completo)")
+    plt.xlabel("Intensidad")
+    plt.ylabel("Frecuencia")
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(RUTA_HISTOGRAMA_CIFRADO)
+    plt.close()
+    print(f"[GRAFICA] Histograma después de confusión (cifrado completo) guardado en {RUTA_HISTOGRAMA_CIFRADO}")
+
 def graficar_hamming(imagen, vector_cifrado, ancho, alto):
     """
     Se calcula la distancia Hamming entre la imagen original y la cifrada
@@ -518,6 +571,7 @@ def main():
     graficar_hamming(imagen, vector_cifrado, ancho, alto)
     graficar_series_vectores(difusion_x, vector_logistico, x_key)
     graficar_vector_cifrado(vector_cifrado)
+    graficar_histogramas(imagen, difusion_x, vector_cifrado, ancho, alto)
 
     print("[PROGRAMA] Proceso de cifrado completado")
 
