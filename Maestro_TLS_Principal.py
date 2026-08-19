@@ -182,7 +182,7 @@ def aplicar_confusion(difusion, vector_logistico, nmax, rosslerParams):
     Se aplica la etapa de confusión utilizando el oscilador de Rössler
     Parámetros:
     ----------
-    difusion : np.ndarray
+    difusion : np.ndarray                   
         Vector 1D normalizado en [0, 1] con la imagen difundida
     vector_logistico : np.ndarray
         Secuencia del mapa logístico usado como máscara de difusión (se suma en confusión)
@@ -282,16 +282,16 @@ def preparar_payload(vector_cifrado, x_master, y_maestro, z_master, t_maestro, a
     """
 
     data = {
-        "vector_cifrado": vector_cifrado.tolist(),
-        "x_maestro": x_master.tolist(),
-        "y_maestro": y_maestro.tolist(),
+        "vector_cifrado": vector_cifrado.tolist(), #CC
+        "x_maestro": x_master.tolist(), 
+        "y_maestro": y_maestro.tolist(), # y_maestro
         "z_maestro": z_master.tolist(),
         "t_maestro": t_maestro.tolist(),
-        "ancho": ancho,
-        "alto": alto,
-        "nmax": nmax,
-        "tiempo_sinc": TIEMPO_SINC,
-        "KEYSTREAM": KEYSTREAM
+        "ancho": ancho, #M
+        "alto": alto, #N
+        "nmax": nmax, #N * M * 3
+        "tiempo_sinc": TIEMPO_SINC, #Iteraciones Transitorio = 6000
+        "KEYSTREAM": KEYSTREAM #Iteraciones del estado estacionario H = 30000
     }
     return data
 
