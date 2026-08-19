@@ -225,9 +225,9 @@ def aplicar_confusion(difusion, vector_logistico, nmax, rosslerParams):
         args = tuple(rosslerParams.values()),
         t_span = t_span,
         t_eval = t_eval,
-        method = 'RK23',
-        rtol = 1e-6,
-        atol = 1e-8
+        method = 'RK45',
+        rtol = 1e-5,
+        atol = 1e-6
     )
     t_fin_rossler = time.perf_counter()
     tiempo_rossler = t_fin_rossler - t_inicio_rossler

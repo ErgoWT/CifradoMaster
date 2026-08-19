@@ -1,0 +1,349 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[spanish]{babel}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{courier}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{hyperref}
+\hypersetup{
+	colorlinks=true,
+	linkcolor=black,
+	urlcolor=cyan,
+	pdftitle={Comunicación MQTT sobre TLS entre Publisher y Subscriber},
+	pdfsubject={Protocolo MQTT, seguridad TLS},
+	pdfkeywords={MQTT, TLS, broker, certificados, Raspberry Pi}
+}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\lstset{
+	language=Python,
+	basicstyle=\ttfamily\small,
+	keywordstyle=\color{blue}\bfseries,
+	commentstyle=\color{green!60!black}\itshape,
+	stringstyle=\color{red},
+	numbers=left,
+	numberstyle=\tiny\color{gray},
+	numbersep=8pt,
+	backgroundcolor=\color{gray!10},
+	showstringspaces=false,
+	frame=single,
+	tabsize=4,
+	captionpos=b,
+	breaklines=true,
+	xleftmargin=2em,
+	framexleftmargin=1.5em
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Comunicación MQTT sobre TLS}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\newcommand{\Kc}{K_{c}}
+\newcommand{\Ks}{K_{s}}
+
+\title{\textbf{Comunicación MQTT sobre TLS}\\[0.3cm]
+\large Procedimiento detallado del intercambio de datos entre un \textit{publisher} y un \textit{subscriber}}
+\author{Proyecto: Encriptación con sistema dinámico de Rössler}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent
+Este documento describe cómo dos dispositivos intercambian información utilizando el protocolo MQTT cuando dicho intercambio se protege con TLS. Se detalla el papel del \textit{broker}, la negociación de la sesión segura, el uso de certificados y la forma en que un mensaje publicado por el emisor llega al receptor. La descripción se apoya en la configuración empleada en el programa \texttt{Maestro\_TLS\_Principal.py}, que actúa como \textit{publisher} de los datos cifrados del experimento. El objetivo es comprender el mecanismo de transporte y su propósito dentro del experimento propuesto.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% =====================================================================
+\section{Introducción}
+% =====================================================================
+
+El experimento genera una imagen cifrada mediante un esquema caótico basado en el sistema de Rössler y en un mapa logístico. Una vez cifrada, esa información debe viajar desde el dispositivo que la produce (un Raspberry Pi 4 que actúa como \textbf{maestro}) hasta el dispositivo que la reconstruye (el \textbf{esclavo}). El protocolo elegido para ese transporte es MQTT, y el canal se protege con TLS.
+
+Es importante separar dos capas que resuelven problemas distintos:
+
+\begin{itemize}[leftmargin=1.4cm]
+	\item El \textbf{cifrado caótico} protege el \textit{contenido} de la imagen. Es la aportación del experimento y es independiente de cómo se transporte el resultado.
+	\item El \textbf{cifrado TLS} protege el \textit{transporte}. Impide que un tercero conectado a la misma red pueda leer, alterar o suplantar los mensajes MQTT mientras viajan.
+\end{itemize}
+
+Ambas capas se aplican de forma sucesiva: el programa cifra primero la imagen y después entrega el resultado a MQTT, que a su vez lo entrega a TLS. Este documento se ocupa exclusivamente de la segunda capa.
+
+% =====================================================================
+\section{Elementos del sistema}
+% =====================================================================
+
+\subsection{Publisher, subscriber y broker}
+
+MQTT no conecta directamente a los dos dispositivos. Introduce un intermediario llamado \textbf{broker}, que es un programa servidor (en este proyecto, Mosquitto, ejecutándose en el mismo Raspberry Pi). El flujo es siempre en dos tramos:
+
+\begin{enumerate}[leftmargin=1.4cm]
+	\item El \textbf{publisher} se conecta al broker y le entrega un mensaje asociado a un \textit{topic}.
+	\item El \textbf{subscriber}, que previamente se conectó al broker y declaró interés en ese \textit{topic}, recibe una copia del mensaje.
+\end{enumerate}
+
+Las consecuencias de este diseño son relevantes para el experimento:
+
+\begin{itemize}[leftmargin=1.4cm]
+	\item Publisher y subscriber \textbf{nunca se conectan entre sí}. No necesitan conocer la dirección del otro, ni estar activos al mismo tiempo.
+	\item Cada dispositivo establece \textbf{su propia sesión TLS} con el broker. Existen, por tanto, dos túneles TLS independientes, no uno solo de extremo a extremo.
+	\item El broker \textbf{sí ve el contenido} de los mensajes en claro, porque descifra el tramo TLS entrante y vuelve a cifrar el tramo saliente. En este experimento eso no compromete la imagen, porque lo que se publica ya está cifrado caóticamente antes de entrar a MQTT.
+\end{itemize}
+
+\subsection{Topics utilizados}
+
+Un \textit{topic} es una etiqueta jerárquica de texto que clasifica los mensajes. En el programa se emplean dos:
+
+\begin{center}
+\begin{tabularx}{0.92\textwidth}{@{}l X@{}}
+\toprule
+\textbf{Topic} & \textbf{Contenido} \\
+\midrule
+\texttt{chaoskeystream/keys} & Parámetros del sistema de Rössler ($a$, $b$, $c$) y del mapa logístico. \\
+\texttt{chaoskeystream/data} & Vector cifrado, trayectorias del maestro, dimensiones de la imagen y parámetros de sincronización. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Separar ambos topics permite que el subscriber trate la información de manera distinta: los parámetros son pequeños y estables, mientras que los datos son voluminosos y cambian en cada ejecución.
+
+\subsection{Puerto y certificados}
+
+La configuración del programa fija tres elementos que definen el canal seguro:
+
+\begin{lstlisting}[caption={Configuración del canal en \texttt{Maestro\_TLS\_Principal.py}}]
+BROKER = "raspberrypiJED.local"
+PORT = 8883
+CA_CERT_PATH = "/etc/mosquitto/ca_certificates/ca.crt"
+\end{lstlisting}
+
+El puerto \textbf{8883} es el asignado por convención a MQTT sobre TLS; el puerto 1883, usado en las pruebas de referencia sin cifrado, transporta los mismos mensajes en texto plano. El archivo \texttt{ca.crt} es el certificado de la \textbf{autoridad certificadora} (CA) que firmó el certificado del broker: es la pieza que permite al cliente decidir si el servidor al que se conectó es realmente el que dice ser.
+
+% =====================================================================
+\section{Establecimiento de la sesión segura}
+% =====================================================================
+
+Antes de que se transmita un solo byte de MQTT, cliente y broker deben construir un canal cifrado. Ese proceso se denomina \textit{handshake} TLS y ocurre una sola vez por conexión.
+
+\subsection{Secuencia del handshake}
+
+\begin{enumerate}[leftmargin=1.4cm, itemsep=0.35em]
+	\item \textbf{ClientHello.} El cliente abre una conexión TCP al puerto 8883 y anuncia qué versiones de TLS soporta, qué combinaciones de algoritmos (\textit{cipher suites}) puede utilizar y un número aleatorio, $random_C$.
+
+	\item \textbf{ServerHello y certificado.} El broker responde eligiendo una versión y una \textit{cipher suite} de entre las ofrecidas, envía su propio número aleatorio $random_S$ y adjunta su \textbf{certificado digital}. El certificado contiene la clave pública del broker, su identidad (el nombre \texttt{raspberrypiJED.local}) y la firma de la CA.
+
+	\item \textbf{Validación del certificado.} El cliente comprueba, usando el \texttt{ca.crt} que tiene almacenado localmente, que la firma del certificado es auténtica, que no ha caducado y que el nombre declarado coincide con el servidor al que se conectó. Si cualquiera de estas comprobaciones falla, la conexión se aborta.
+
+	\item \textbf{Intercambio de claves.} Cliente y servidor intercambian el material criptográfico necesario (típicamente mediante un acuerdo Diffie-Hellman efímero) para obtener un secreto compartido que nunca viaja explícitamente por la red.
+
+	\item \textbf{Derivación de claves de sesión.} A partir de ese secreto compartido y de los dos números aleatorios, ambos extremos aplican de forma independiente una función de derivación de claves (KDF) y obtienen el mismo conjunto de claves simétricas. Dos de ellas gobiernan el cifrado del tráfico:
+	\begin{itemize}
+		\item $\Kc$: cifra lo que el cliente envía al broker.
+		\item $\Ks$: cifra lo que el broker envía al cliente.
+	\end{itemize}
+	Se emplean claves distintas por sentido para que el mismo material criptográfico no se reutilice en ambas direcciones.
+
+	\item \textbf{Confirmación.} Cada extremo envía un mensaje \texttt{Finished} ya cifrado, que resume todo el intercambio anterior. Si el otro extremo lo descifra y verifica correctamente, queda demostrado que ambos derivaron las mismas claves y que nadie manipuló los mensajes previos.
+\end{enumerate}
+
+A partir de este punto, la conexión TCP se comporta como un \textbf{túnel cifrado}: todo lo que se escriba en ella se cifra automáticamente antes de salir y se descifra al llegar.
+
+\subsection{Qué garantiza y qué no garantiza TLS}
+
+\begin{center}
+\begin{tabularx}{0.95\textwidth}{@{}l X@{}}
+\toprule
+\textbf{Propiedad} & \textbf{Significado en este experimento} \\
+\midrule
+Confidencialidad & Un observador en la red Wi-Fi captura únicamente bytes cifrados; no puede recuperar el vector cifrado ni los parámetros de Rössler. \\
+Integridad & Cualquier modificación de un byte en tránsito invalida la verificación y el registro se descarta. \\
+Autenticación del servidor & El cliente confirma que habla con el broker legítimo y no con un impostor que haya suplantado la dirección. \\
+\midrule
+\textit{No} cubre & El almacenamiento en el broker, ni la protección del contenido frente al propio broker, ni la seguridad del archivo una vez recibido. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% =====================================================================
+\section{Configuración TLS en el código}
+% =====================================================================
+
+En el programa, toda la negociación descrita se activa con tres líneas:
+
+\begin{lstlisting}[caption={Activación de TLS antes de conectar}]
+client = mqtt.Client()
+client.tls_set(ca_certs=CA_CERT_PATH, tls_version=ssl.PROTOCOL_TLS_CLIENT)
+client.tls_insecure_set(False)
+client.connect(BROKER, PORT, 60)
+\end{lstlisting}
+
+El significado de cada instrucción es el siguiente:
+
+\begin{itemize}[leftmargin=1.4cm]
+	\item \texttt{tls\_set(ca\_certs=...)} indica a la biblioteca cuál es el certificado de la CA en el que debe confiar. Sin este parámetro el cliente no tendría criterio para aceptar o rechazar el certificado del broker.
+	\item \texttt{tls\_version=ssl.PROTOCOL\_TLS\_CLIENT} selecciona el modo cliente y habilita, por defecto, la verificación del certificado y del nombre del servidor.
+	\item \texttt{tls\_insecure\_set(False)} exige explícitamente que el nombre contenido en el certificado coincida con \texttt{raspberrypiJED.local}. Con el valor \texttt{True} el tráfico seguiría cifrado, pero se aceptaría cualquier servidor: se conservaría la confidencialidad y se perdería la autenticación.
+	\item \texttt{connect(BROKER, PORT, 60)} abre la conexión TCP, dispara el \textit{handshake} completo y, solo si este concluye correctamente, envía el paquete MQTT \texttt{CONNECT}. El valor 60 es el \textit{keep-alive} en segundos.
+\end{itemize}
+
+Es importante notar el orden: \textbf{TLS se establece antes que MQTT}. El paquete \texttt{CONNECT} de MQTT ya viaja cifrado con $\Kc$, y la respuesta \texttt{CONNACK} del broker viaja cifrada con $\Ks$.
+
+% =====================================================================
+\section{Transmisión de los datos}
+% =====================================================================
+
+\subsection{Preparación del mensaje}
+
+MQTT transporta el payload como una secuencia de bytes, sin interpretarlo. Los arreglos de NumPy no son directamente transmisibles, por lo que el programa los convierte primero a listas de Python y después a texto JSON:
+
+\begin{lstlisting}[caption={Construcción del payload}]
+data = {
+    "vector_cifrado": vector_cifrado.tolist(),
+    "x_maestro": x_master.tolist(),
+    "y_maestro": y_maestro.tolist(),
+    "z_maestro": z_master.tolist(),
+    "t_maestro": t_maestro.tolist(),
+    "ancho": ancho,
+    "alto": alto,
+    "nmax": nmax,
+    "tiempo_sinc": TIEMPO_SINC,
+    "KEYSTREAM": KEYSTREAM
+}
+\end{lstlisting}
+
+La llamada \texttt{json.dumps(data)} produce una única cadena de texto. Esta representación es legible y portable, pero costosa en tamaño: un número en coma flotante que ocupa 8 bytes en memoria puede requerir cerca de 20 caracteres en JSON. Para una imagen de $n_{\max}$ valores, el payload resultante es del orden de decenas de megabytes, lo cual explica que el tiempo de publicación sea una métrica que el programa registra explícitamente.
+
+\subsection{Publicación}
+
+\begin{lstlisting}[caption={Publicación de parámetros y datos}]
+client.publish(TOPIC_KEYS, json.dumps({
+        "ROSSLER_PARAMS": ROSSLER_PARAMS,
+        "LOGISTIC_PARAMS": LOGISTIC_PARAMS
+    }), qos=QOS, retain=True)
+time.sleep(0.5)
+
+client.publish(TOPIC_DATA, json.dumps(data), qos=QOS, retain=True)
+\end{lstlisting}
+
+Dos parámetros condicionan el comportamiento de estas publicaciones.
+
+\paragraph{QoS (calidad de servicio).} El programa usa \texttt{QOS = 1}, que corresponde a la entrega \textit{al menos una vez}. El publisher envía el mensaje y espera del broker una confirmación (\texttt{PUBACK}); si no la recibe dentro del plazo previsto, reenvía. Los tres niveles disponibles son:
+
+\begin{center}
+\begin{tabularx}{0.95\textwidth}{@{}c l X@{}}
+\toprule
+\textbf{Nivel} & \textbf{Semántica} & \textbf{Comportamiento} \\
+\midrule
+0 & Como máximo una vez & Se envía sin confirmación; puede perderse. \\
+1 & Al menos una vez & Se confirma; puede llegar duplicado si se reenvía. \\
+2 & Exactamente una vez & Intercambio de cuatro paquetes; sin pérdidas ni duplicados, con mayor latencia. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+El nivel 1 es adecuado aquí porque la pérdida del vector cifrado impediría la reconstrucción de la imagen, mientras que un eventual duplicado simplemente sobrescribe el mismo contenido.
+
+\paragraph{Retain.} Con \texttt{retain=True}, el broker conserva el último mensaje publicado en cada topic. Un subscriber que se conecte después de la publicación lo recibe de inmediato, sin esperar a la siguiente ejecución del maestro. Esto desacopla temporalmente a los dos dispositivos: el esclavo puede iniciarse minutos más tarde y aun así obtener los datos.
+
+La pausa \texttt{time.sleep(0.5)} entre ambas publicaciones da margen a que el envío se complete antes de encolar el siguiente, evitando que el mensaje voluminoso de datos compita con el de parámetros.
+
+\subsection{Recorrido completo de un mensaje}
+
+Suponiendo que ambos dispositivos ya establecieron su sesión TLS con el broker, la publicación del vector cifrado sigue esta secuencia:
+
+\begin{enumerate}[leftmargin=1.4cm, itemsep=0.3em]
+	\item El publisher construye un paquete MQTT \texttt{PUBLISH} que contiene el topic \texttt{chaoskeystream/data} y el payload JSON.
+	\item TLS fragmenta ese paquete en registros, cifra cada uno con $\Kc$ y añade a cada registro un código de autenticación que protege su integridad.
+	\item Los registros viajan por la red como segmentos TCP ordinarios. Un observador ve tráfico hacia el puerto 8883 y puede medir su volumen, pero no leer su contenido.
+	\item El broker descifra los registros con $\Kc$, verifica su integridad y reconstruye el paquete \texttt{PUBLISH} original.
+	\item El broker consulta su tabla de suscripciones, identifica al subscriber registrado en ese topic y almacena el mensaje como \textit{retained}.
+	\item El broker construye un nuevo paquete \texttt{PUBLISH} hacia el subscriber y lo cifra con la clave de escritura correspondiente a \textbf{esa otra sesión TLS}, que es distinta de $\Ks$.
+	\item El subscriber descifra, obtiene la cadena JSON, la convierte de vuelta a arreglos con \texttt{json.loads} y procede al descifrado caótico.
+\end{enumerate}
+
+El punto 4 y el punto 6 son los que evidencian que el broker es un punto de terminación TLS: el mensaje se descifra y se vuelve a cifrar en su interior.
+
+\subsection{Cierre de la conexión}
+
+\begin{lstlisting}[caption={Desconexión ordenada}]
+client.disconnect()
+\end{lstlisting}
+
+La llamada envía un paquete MQTT \texttt{DISCONNECT} y cierra la sesión TLS de forma ordenada. Las claves $\Kc$ y $\Ks$ se descartan: una conexión posterior repetirá el \textit{handshake} completo y derivará claves nuevas. Los mensajes con \texttt{retain=True} permanecen almacenados en el broker aunque el publisher se haya desconectado.
+
+% =====================================================================
+\section{Ejemplo comparativo: con y sin TLS}
+% =====================================================================
+
+El proyecto incluye ejecuciones equivalentes sobre el puerto 1883 (sin TLS) y sobre el 8883 (con TLS). La diferencia observable desde la red es la siguiente.
+
+\paragraph{Puerto 1883.} Una captura de tráfico muestra directamente el nombre del topic y el payload JSON legible:
+
+\begin{center}
+\ttfamily\small
+chaoskeystream/keys \{"ROSSLER\_PARAMS": \{"a": 0.2, "b": 0.2, "c": 5.7\}, ...\}
+\end{center}
+
+Los parámetros del sistema caótico quedan expuestos, y con ellos la posibilidad de reproducir el keystream y deshacer el cifrado.
+
+\paragraph{Puerto 8883.} La misma captura muestra únicamente registros TLS:
+
+\begin{center}
+\ttfamily\small
+17 03 03 04 A1 | 3f e2 91 c4 7b 0a ... (bytes cifrados)
+\end{center}
+
+El primer byte identifica el tipo de registro, los dos siguientes la versión, los dos posteriores la longitud, y el resto es contenido cifrado. Ni el topic ni el payload son recuperables sin las claves de sesión.
+
+\paragraph{Costo.} El cifrado no es gratuito: el \textit{handshake} añade varios intercambios de mensajes antes de la primera publicación, y cada registro incorpora unos pocos bytes de sobrecarga. El programa cuantifica este efecto mediante la métrica \texttt{tiempo\_mqtt\_segundos}, que se registra en \texttt{tiempos\_procesos.csv} junto con los tiempos de difusión y confusión, permitiendo comparar directamente ambas configuraciones.
+
+% =====================================================================
+\section{Papel de TLS dentro del experimento}
+% =====================================================================
+
+La combinación de ambas capas responde a amenazas distintas:
+
+\begin{itemize}[leftmargin=1.4cm]
+	\item Sin cifrado caótico y sin TLS, cualquier observador de la red recupera la imagen íntegra.
+	\item Con cifrado caótico pero sin TLS, la imagen viaja ilegible, pero los parámetros publicados en \texttt{chaoskeystream/keys} viajan en claro y permiten reconstruir el keystream. La protección resulta ineficaz.
+	\item Con ambas capas, el observador no obtiene ni el contenido ni los parámetros, y no puede alterar los mensajes sin que la manipulación sea detectada.
+\end{itemize}
+
+TLS resuelve, por tanto, el problema práctico que el esquema caótico no aborda por sí solo: la distribución segura de los parámetros que actúan como clave. Esta separación de responsabilidades permite además evaluar el esquema de cifrado de forma aislada, midiendo su desempeño (histogramas, distancia de Hamming, diagramas de dispersión) sin que el transporte introduzca variables adicionales.
+
+% =====================================================================
+\section{Resumen del procedimiento}
+% =====================================================================
+
+\begin{enumerate}[leftmargin=1.4cm, itemsep=0.3em]
+	\item El publisher cifra la imagen mediante difusión (mapa logístico) y confusión (sistema de Rössler).
+	\item Serializa el resultado y los parámetros necesarios a JSON.
+	\item Abre una conexión TCP al broker en el puerto 8883.
+	\item Ejecuta el \textit{handshake} TLS: valida el certificado del broker contra \texttt{ca.crt} y deriva las claves de sesión $\Kc$ y $\Ks$.
+	\item Envía el paquete MQTT \texttt{CONNECT} ya cifrado y recibe \texttt{CONNACK}.
+	\item Publica en \texttt{chaoskeystream/keys} y \texttt{chaoskeystream/data} con QoS 1 y \texttt{retain} activo.
+	\item El broker descifra, almacena y reenvía cada mensaje al subscriber a través de la sesión TLS de este.
+	\item El subscriber deserializa el JSON y reconstruye la imagen mediante sincronización con el sistema maestro.
+	\item El publisher cierra la sesión; los mensajes retenidos permanecen disponibles en el broker.
+\end{enumerate}
+
+\end{document}
